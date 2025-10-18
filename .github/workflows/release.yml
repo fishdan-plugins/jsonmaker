@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive tag + zip name
+        run: |
+          echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "ZIP_NAME=jsonmaker.zip" >> $GITHUB_ENV
+
+      - name: Verify plugin header
+        run: |
+          test -f jsonmaker.php
+          grep -q "Plugin Name:.*Jsonmaker" jsonmaker.php
+
+      - name: Ensure version matches tag
+        run: |
+          FILE_VERSION=$(grep -E "^\s*Version:\s*" jsonmaker.php | head -1 | sed -E 's/^.*Version:\s*([0-9A-Za-z\.-]+).*/\1/')
+          if [ -z "$FILE_VERSION" ]; then
+            echo "::error ::Version header missing in jsonmaker.php"
+            exit 1
+          fi
+          EXPECTED="${TAG#v}"
+          if [ "$FILE_VERSION" != "$EXPECTED" ]; then
+            echo "::error ::Version in jsonmaker.php ($FILE_VERSION) does not match tag ($TAG)"
+            exit 1
+          fi
+
+      - name: Build plugin ZIP (POSIX paths)
+        run: |
+          git archive --format=zip --output "$ZIP_NAME" --prefix=jsonmaker/ "$GITHUB_SHA"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: |
+            ${{ env.ZIP_NAME }}
+          generate_release_notes: true
