@@ -32,7 +32,7 @@ jobs:
 
       - name: Ensure version matches tag
         run: |
-          FILE_VERSION=$(grep -E "^\s*Version:\s*" jsonmaker.php | head -1 | sed -E 's/^.*Version:\s*([0-9A-Za-z\.-]+).*/\1/')
+          FILE_VERSION=$(grep -E "^\s*(\*\s*)?Version:\s*" jsonmaker.php | head -1 | sed -E 's/^.*Version:\s*([0-9A-Za-z\.-]+).*/\1/')
           if [ -z "$FILE_VERSION" ]; then
             echo "::error ::Version header missing in jsonmaker.php"
             exit 1
