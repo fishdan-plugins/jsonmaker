@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.2
+ * Version: 0.1.3
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: jsonmaker
