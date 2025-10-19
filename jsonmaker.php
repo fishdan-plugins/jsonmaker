@@ -6,7 +6,8 @@
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: jsonmaker
- * Author: Codex
+ * Author: Daniel Fishman
+ * Author URI: https://www.fishdan.com
  */
 
 if (! defined('ABSPATH')) {
