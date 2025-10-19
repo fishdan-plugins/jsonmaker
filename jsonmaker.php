@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.3
+ * Version: 0.1.4
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: jsonmaker
@@ -35,6 +35,8 @@ final class Jsonmaker_Plugin {
 		add_filter('query_vars', [$this, 'register_query_var']);
 		add_action('template_redirect', [$this, 'maybe_output_json']);
 		add_shortcode('jsonmaker', [$this, 'render_shortcode']);
+		add_action('send_headers', [$this, 'maybe_add_cors_headers']);
+		add_filter('redirect_canonical', [$this, 'maybe_disable_canonical_redirect'], 10, 2);
 	}
 
 	public static function activate(): void {
@@ -766,6 +768,36 @@ final class Jsonmaker_Plugin {
 		$request_uri = esc_url_raw($request_uri);
 
 		return home_url($request_uri);
+	}
+
+	public function maybe_add_cors_headers(): void {
+		$requested = get_query_var('jsonmaker_node');
+		if ($requested === '') {
+			$raw = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
+			if (! is_string($raw) || $raw === '') {
+				return;
+			}
+		}
+
+		$this->send_cors_headers();
+	}
+
+	public function maybe_disable_canonical_redirect($redirect_url, $requested_url) {
+		$requested = get_query_var('jsonmaker_node');
+		if ($requested !== '') {
+			return false;
+		}
+
+		$raw = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
+		if (is_string($raw) && $raw !== '') {
+			return false;
+		}
+
+		if (strpos($requested_url, '/json/') !== false) {
+			return false;
+		}
+
+		return $redirect_url;
 	}
 
 	private function send_cors_headers(): void {
