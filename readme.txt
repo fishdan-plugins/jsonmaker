@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -44,6 +44,8 @@ Each node’s slug is derived from its title. Enforcing unique titles guarantees
 
 == Changelog ==
 
+= 0.1.1 =
+* Addressed WordPress Plugin Check feedback and improved inline asset handling.
+
 = 0.1.0 =
 * Initial release.
-

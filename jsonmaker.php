@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.0
+ * Version: 0.1.1
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: jsonmaker
@@ -413,7 +413,6 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_action" value="delete_node" />';
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
-		$data_attr = $has_children ? ' data-jsonmaker-has-children="1"' : '';
 		if ($has_children) {
 			echo '<button type="submit" class="jsonmaker-delete-button" data-jsonmaker-has-children="1">';
 		} else {
