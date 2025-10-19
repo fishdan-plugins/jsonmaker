@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,9 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.1.2 =
+* Added CORS headers and OPTIONS handling for the JSON endpoint to support browser extensions.
 
 = 0.1.1 =
 * Addressed WordPress Plugin Check feedback and improved inline asset handling.

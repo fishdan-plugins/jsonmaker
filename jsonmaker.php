@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.1
+ * Version: 0.1.2
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Text Domain: jsonmaker
@@ -234,6 +234,16 @@ final class Jsonmaker_Plugin {
 
 		if ($requested === '') {
 			return;
+		}
+
+		$this->send_cors_headers();
+
+		$method_raw = filter_input(INPUT_SERVER, 'REQUEST_METHOD', FILTER_UNSAFE_RAW);
+		$method = is_string($method_raw) ? strtoupper($method_raw) : 'GET';
+
+		if ($method === 'OPTIONS') {
+			status_header(200);
+			exit;
 		}
 
 		$node = $this->find_node($this->get_tree(), sanitize_key($requested));
@@ -755,6 +765,12 @@ final class Jsonmaker_Plugin {
 		$request_uri = esc_url_raw($request_uri);
 
 		return home_url($request_uri);
+	}
+
+	private function send_cors_headers(): void {
+		header('Access-Control-Allow-Origin: *');
+		header('Access-Control-Allow-Methods: GET, OPTIONS');
+		header('Access-Control-Allow-Headers: Content-Type');
 	}
 }
 
