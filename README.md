@@ -1,4 +1,4 @@
-# Jsonmaker Plugin
+# Jsonmaker
 
 [![WordPress](https://img.shields.io/badge/WordPress-%5E6.0-blue)](https://wordpress.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -69,4 +69,3 @@ Questions or ideas? Email [dan@fishdan.com](mailto:dan@fishdan.com).
 ## 📝 License
 
 MIT. See `LICENSE` for details.
-

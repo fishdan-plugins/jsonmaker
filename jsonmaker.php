@@ -3,6 +3,9 @@
  * Plugin Name: Jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
  * Version: 0.1.0
+ * License: MIT
+ * License URI: https://opensource.org/licenses/MIT
+ * Text Domain: jsonmaker
  * Author: Codex
  */
 
@@ -78,15 +81,16 @@ final class Jsonmaker_Plugin {
 	}
 
 	public function maybe_handle_submission(): void {
-		if (! isset($_POST['jsonmaker_action'])) {
+		$action_raw = filter_input(INPUT_POST, 'jsonmaker_action', FILTER_UNSAFE_RAW);
+		$action = is_string($action_raw) ? sanitize_key(wp_unslash($action_raw)) : '';
+
+		if ($action === '') {
 			return;
 		}
 
 		if (! current_user_can(self::CAPABILITY)) {
 			return;
 		}
-
-		$action = sanitize_key(wp_unslash($_POST['jsonmaker_action']));
 
 		if ($action === 'add_node') {
 			$this->handle_add_submission();
@@ -98,21 +102,23 @@ final class Jsonmaker_Plugin {
 	}
 
 	private function handle_add_submission(): void {
-		if (! isset($_POST['jsonmaker_parent'], $_POST['jsonmaker_title'])) {
+		$parent_raw = filter_input(INPUT_POST, 'jsonmaker_parent', FILTER_UNSAFE_RAW);
+		$title_raw = filter_input(INPUT_POST, 'jsonmaker_title', FILTER_UNSAFE_RAW);
+
+		if (! is_string($parent_raw) || ! is_string($title_raw)) {
 			return;
 		}
 
 		check_admin_referer('jsonmaker_add_node', 'jsonmaker_nonce');
 
-		$parent_slug = sanitize_key(wp_unslash($_POST['jsonmaker_parent']));
-		$title_raw = wp_unslash($_POST['jsonmaker_title']);
-		$title = sanitize_text_field($title_raw);
+		$parent_slug = sanitize_key(wp_unslash($parent_raw));
+		$title = sanitize_text_field(wp_unslash($title_raw));
 		$title = trim($title);
 		$value = '';
 
-		if (isset($_POST['jsonmaker_value'])) {
-			$value_raw = wp_unslash($_POST['jsonmaker_value']);
-			$value = sanitize_text_field($value_raw);
+		$value_raw = filter_input(INPUT_POST, 'jsonmaker_value', FILTER_UNSAFE_RAW);
+		if (is_string($value_raw)) {
+			$value = sanitize_text_field(wp_unslash($value_raw));
 		}
 
 		if ($title === '' || $parent_slug === '') {
@@ -147,13 +153,15 @@ final class Jsonmaker_Plugin {
 	}
 
 	private function handle_delete_submission(): void {
-		if (! isset($_POST['jsonmaker_target'])) {
+		$target_raw = filter_input(INPUT_POST, 'jsonmaker_target', FILTER_UNSAFE_RAW);
+
+		if (! is_string($target_raw)) {
 			return;
 		}
 
 		check_admin_referer('jsonmaker_delete_node', 'jsonmaker_delete_nonce');
 
-		$target_slug = sanitize_key(wp_unslash($_POST['jsonmaker_target']));
+		$target_slug = sanitize_key(wp_unslash($target_raw));
 
 		if ($target_slug === '') {
 			$this->redirect_with_message('missing_fields');
@@ -186,15 +194,17 @@ final class Jsonmaker_Plugin {
 	}
 
 	private function handle_edit_submission(): void {
-		if (! isset($_POST['jsonmaker_target'], $_POST['jsonmaker_title'])) {
+		$target_raw = filter_input(INPUT_POST, 'jsonmaker_target', FILTER_UNSAFE_RAW);
+		$title_raw = filter_input(INPUT_POST, 'jsonmaker_title', FILTER_UNSAFE_RAW);
+
+		if (! is_string($target_raw) || ! is_string($title_raw)) {
 			return;
 		}
 
 		check_admin_referer('jsonmaker_edit_node', 'jsonmaker_edit_nonce');
 
-		$target_slug = sanitize_key(wp_unslash($_POST['jsonmaker_target']));
-		$title_raw = wp_unslash($_POST['jsonmaker_title']);
-		$new_title = sanitize_text_field($title_raw);
+		$target_slug = sanitize_key(wp_unslash($target_raw));
+		$new_title = sanitize_text_field(wp_unslash($title_raw));
 		$new_title = trim($new_title);
 
 		if ($target_slug === '' || $new_title === '') {
@@ -243,12 +253,14 @@ final class Jsonmaker_Plugin {
 		$notice_code = '';
 		$notice_status = 'error';
 
-		if (isset($_GET['jsonmaker_msg'])) {
-			$notice_code = sanitize_key(wp_unslash($_GET['jsonmaker_msg']));
+		$notice_raw = filter_input(INPUT_GET, 'jsonmaker_msg', FILTER_UNSAFE_RAW);
+		if (is_string($notice_raw)) {
+			$notice_code = sanitize_key(wp_unslash($notice_raw));
 		}
 
-		if (isset($_GET['jsonmaker_status'])) {
-			$notice_status_candidate = sanitize_key(wp_unslash($_GET['jsonmaker_status']));
+		$status_raw = filter_input(INPUT_GET, 'jsonmaker_status', FILTER_UNSAFE_RAW);
+		if (is_string($status_raw)) {
+			$notice_status_candidate = sanitize_key(wp_unslash($status_raw));
 			if ($notice_status_candidate === 'success') {
 				$notice_status = 'success';
 			}
@@ -276,41 +288,49 @@ final class Jsonmaker_Plugin {
 	}
 
 	private function render_node(array $node): void {
-		$title = esc_html($node['title'] ?? '');
+		$title_raw = isset($node['title']) ? (string) $node['title'] : '';
 		$value_raw = $node['value'] ?? $node['url'] ?? '';
 		if (! is_scalar($value_raw)) {
 			$value_raw = '';
 		}
-		$value_display = '';
-		$is_value_url = false;
-
-		if ($value_raw !== '') {
-			$value_raw = (string) $value_raw;
-			$is_value_url = (bool) filter_var($value_raw, FILTER_VALIDATE_URL);
-			$value_display = $is_value_url ? '<a href="' . esc_url($value_raw) . '">' . esc_html($value_raw) . '</a>' : esc_html($value_raw);
-		}
 
 		$has_children = ! empty($node['children']);
-		$slug = $node['slug'] ?? '';
+		$slug = isset($node['slug']) ? (string) $node['slug'] : '';
 		$can_manage = current_user_can(self::CAPABILITY);
 		$current_url = $can_manage ? $this->get_current_url() : '';
 
 		echo '<div class="jsonmaker-node">';
 
 		echo '<div class="jsonmaker-node__title">';
-		echo '<span class="jsonmaker-node__label">' . $title . '</span>';
+		printf('<span class="jsonmaker-node__label">%s</span>', esc_html($title_raw));
 
-		if ($value_display !== '') {
-			echo ' <span class="jsonmaker-node__value">-&gt; ' . $value_display . '</span>';
+		if ($value_raw !== '') {
+			$value_raw = (string) $value_raw;
+			if ((bool) filter_var($value_raw, FILTER_VALIDATE_URL)) {
+				printf(
+					' <span class="jsonmaker-node__value">-&gt; <a href="%1$s">%2$s</a></span>',
+					esc_url($value_raw),
+					esc_html($value_raw)
+				);
+			} else {
+				printf(
+					' <span class="jsonmaker-node__value">-&gt; %s</span>',
+					esc_html($value_raw)
+				);
+			}
 		}
 
 		if ($can_manage && $slug !== '') {
-			echo ' <button type="button" class="jsonmaker-add-button" data-jsonmaker-target="jsonmaker-form-' . esc_attr($slug) . '">';
-			echo esc_html__('Add Node', 'jsonmaker');
-			echo '</button>';
-			echo ' <button type="button" class="jsonmaker-edit-button" data-jsonmaker-target="jsonmaker-edit-form-' . esc_attr($slug) . '">';
-			echo esc_html__('Edit', 'jsonmaker');
-			echo '</button>';
+			printf(
+				' <button type="button" class="jsonmaker-add-button" data-jsonmaker-target="%1$s">%2$s</button>',
+				esc_attr('jsonmaker-form-' . $slug),
+				esc_html__('Add Node', 'jsonmaker')
+			);
+			printf(
+				' <button type="button" class="jsonmaker-edit-button" data-jsonmaker-target="%1$s">%2$s</button>',
+				esc_attr('jsonmaker-edit-form-' . $slug),
+				esc_html__('Edit', 'jsonmaker')
+			);
 			$this->render_delete_form($slug, $has_children, $current_url);
 		}
 		echo '</div>';
@@ -326,7 +346,7 @@ final class Jsonmaker_Plugin {
 
 		if ($can_manage) {
 			$this->render_add_form($slug, $current_url);
-			$this->render_edit_form($slug, $node['title'] ?? '', $current_url);
+			$this->render_edit_form($slug, $title_raw, $current_url);
 		}
 
 		echo '</div>';
@@ -394,7 +414,11 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
 		$data_attr = $has_children ? ' data-jsonmaker-has-children="1"' : '';
-		echo '<button type="submit" class="jsonmaker-delete-button"' . $data_attr . '>';
+		if ($has_children) {
+			echo '<button type="submit" class="jsonmaker-delete-button" data-jsonmaker-has-children="1">';
+		} else {
+			echo '<button type="submit" class="jsonmaker-delete-button">';
+		}
 		echo esc_html__('Delete Node', 'jsonmaker');
 		echo '</button>';
 		echo '</form>';
@@ -582,8 +606,9 @@ final class Jsonmaker_Plugin {
 	private function redirect_with_message(string $code, bool $success = false): void {
 		$redirect = '';
 
-		if (isset($_POST['jsonmaker_redirect'])) {
-			$redirect = esc_url_raw(wp_unslash($_POST['jsonmaker_redirect']));
+		$redirect_raw = filter_input(INPUT_POST, 'jsonmaker_redirect', FILTER_UNSAFE_RAW);
+		if (is_string($redirect_raw)) {
+			$redirect = esc_url_raw(wp_unslash($redirect_raw));
 		}
 
 		if ($redirect === '') {
@@ -633,107 +658,102 @@ final class Jsonmaker_Plugin {
 
 		$this->printed_assets = true;
 
-		$style = <<<HTML
-<style>
-.jsonmaker-json {font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:1rem; border:1px solid #ddd; overflow:auto;}
-.jsonmaker-tree {font-family: Arial, sans-serif;}
-.jsonmaker-node {border-left:2px solid #ddd; margin-left:1rem; padding-left:1rem; margin-top:0.5rem;}
-.jsonmaker-node__title {display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;}
-.jsonmaker-node__label {font-weight:600;}
-.jsonmaker-node__value {font-family:Menlo, Consolas, monospace;}
-.jsonmaker-node__title a {text-decoration:none;}
-.jsonmaker-add-button,
-.jsonmaker-edit-button,
-.jsonmaker-delete-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer;}
-.jsonmaker-delete-form {display:inline; margin:0;}
-.jsonmaker-delete-button {margin-left:0.25rem;}
-.jsonmaker-add-form,
-.jsonmaker-edit-form {margin-top:0.5rem;}
-.jsonmaker-add-form form,
-.jsonmaker-edit-form form {background:#f9f9f9; border:1px solid #ccc; padding:0.5rem;}
-.jsonmaker-notice {margin-bottom:1rem; padding:0.75rem 1rem; border-radius:4px; border:1px solid transparent; font-weight:600;}
-.jsonmaker-notice--success {background:#f0fff4; border-color:#38a169; color:#276749;}
-.jsonmaker-notice--error {background:#fff5f5; border-color:#e53e3e; color:#9b2c2c;}
-</style>
-HTML;
-
-		$script = <<<HTML
-<script>
-document.addEventListener('click', function (event) {
-	const addButton = event.target.closest('.jsonmaker-add-button');
-	if (addButton) {
-		event.preventDefault();
-
-		const targetId = addButton.dataset.jsonmakerTarget;
-		if (!targetId) {
-			return;
+		if (! wp_style_is('jsonmaker-inline', 'registered')) {
+			wp_register_style('jsonmaker-inline', false, [], null);
 		}
+		wp_enqueue_style('jsonmaker-inline');
+		$style_lines = [
+			'.jsonmaker-json {font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:1rem; border:1px solid #ddd; overflow:auto;}',
+			'.jsonmaker-tree {font-family: Arial, sans-serif;}',
+			'.jsonmaker-node {border-left:2px solid #ddd; margin-left:1rem; padding-left:1rem; margin-top:0.5rem;}',
+			'.jsonmaker-node__title {display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;}',
+			'.jsonmaker-node__label {font-weight:600;}',
+			'.jsonmaker-node__value {font-family:Menlo, Consolas, monospace;}',
+			'.jsonmaker-node__title a {text-decoration:none;}',
+			'.jsonmaker-add-button,',
+			'.jsonmaker-edit-button,',
+			'.jsonmaker-delete-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer;}',
+			'.jsonmaker-delete-form {display:inline; margin:0;}',
+			'.jsonmaker-delete-button {margin-left:0.25rem;}',
+			'.jsonmaker-add-form,',
+			'.jsonmaker-edit-form {margin-top:0.5rem;}',
+			'.jsonmaker-add-form form,',
+			'.jsonmaker-edit-form form {background:#f9f9f9; border:1px solid #ccc; padding:0.5rem;}',
+			'.jsonmaker-notice {margin-bottom:1rem; padding:0.75rem 1rem; border-radius:4px; border:1px solid transparent; font-weight:600;}',
+			'.jsonmaker-notice--success {background:#f0fff4; border-color:#38a169; color:#276749;}',
+			'.jsonmaker-notice--error {background:#fff5f5; border-color:#e53e3e; color:#9b2c2c;}',
+		];
+		wp_add_inline_style('jsonmaker-inline', implode("\n", $style_lines));
 
-		const form = document.getElementById(targetId);
-		if (!form) {
-			return;
+		if (! wp_script_is('jsonmaker-inline', 'registered')) {
+			wp_register_script('jsonmaker-inline', '', [], null, true);
 		}
-
-		const isHidden = form.hasAttribute('hidden');
-		if (isHidden) {
-			form.removeAttribute('hidden');
-			const focusable = form.querySelector('input[name="jsonmaker_title"]');
-			if (focusable) {
-				focusable.focus();
-			}
-		} else {
-			form.setAttribute('hidden', '');
-		}
-
-		return;
-	}
-
-	const editButton = event.target.closest('.jsonmaker-edit-button');
-	if (editButton) {
-		event.preventDefault();
-
-		const targetId = editButton.dataset.jsonmakerTarget;
-		if (!targetId) {
-			return;
-		}
-
-		const form = document.getElementById(targetId);
-		if (!form) {
-			return;
-		}
-
-		const isHidden = form.hasAttribute('hidden');
-		if (isHidden) {
-			form.removeAttribute('hidden');
-			const focusable = form.querySelector('input[name="jsonmaker_title"]');
-			if (focusable) {
-				focusable.focus();
-			}
-		} else {
-			form.setAttribute('hidden', '');
-		}
-
-		return;
-	}
-
-	const deleteButton = event.target.closest('.jsonmaker-delete-button');
-	if (!deleteButton) {
-		return;
-	}
-
-	if (deleteButton.dataset.jsonmakerHasChildren === '1') {
-		event.preventDefault();
-		window.alert('Remove child nodes before deleting this node.');
-	}
-});
-</script>
-HTML;
-
-		echo $style . $script;
+		wp_enqueue_script('jsonmaker-inline');
+		$script_lines = [
+			"document.addEventListener('click', function (event) {",
+			"\tconst addButton = event.target.closest('.jsonmaker-add-button');",
+			"\tif (addButton) {",
+			"\t\tevent.preventDefault();",
+			"\t\tconst targetId = addButton.dataset.jsonmakerTarget;",
+			"\t\tif (!targetId) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tconst form = document.getElementById(targetId);",
+			"\t\tif (!form) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tconst isHidden = form.hasAttribute('hidden');",
+			"\t\tif (isHidden) {",
+			"\t\t\tform.removeAttribute('hidden');",
+			"\t\t\tconst focusable = form.querySelector('input[name=\"jsonmaker_title\"]');",
+			"\t\t\tif (focusable) {",
+			"\t\t\t\tfocusable.focus();",
+			"\t\t\t}",
+			"\t\t} else {",
+			"\t\t\tform.setAttribute('hidden', '');",
+			"\t\t}",
+			"\t\treturn;",
+			"\t}",
+			"\tconst editButton = event.target.closest('.jsonmaker-edit-button');",
+			"\tif (editButton) {",
+			"\t\tevent.preventDefault();",
+			"\t\tconst targetId = editButton.dataset.jsonmakerTarget;",
+			"\t\tif (!targetId) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tconst form = document.getElementById(targetId);",
+			"\t\tif (!form) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tconst isHidden = form.hasAttribute('hidden');",
+			"\t\tif (isHidden) {",
+			"\t\t\tform.removeAttribute('hidden');",
+			"\t\t\tconst focusable = form.querySelector('input[name=\"jsonmaker_title\"]');",
+			"\t\t\tif (focusable) {",
+			"\t\t\t\tfocusable.focus();",
+			"\t\t\t}",
+			"\t\t} else {",
+			"\t\t\tform.setAttribute('hidden', '');",
+			"\t\t}",
+			"\t\treturn;",
+			"\t}",
+			"\tconst deleteButton = event.target.closest('.jsonmaker-delete-button');",
+			"\tif (!deleteButton) {",
+			"\t\treturn;",
+			"\t}",
+			"\tif (deleteButton.dataset.jsonmakerHasChildren === '1') {",
+			"\t\tevent.preventDefault();",
+			"\t\twindow.alert('Remove child nodes before deleting this node.');",
+			"\t}",
+			"});"
+		];
+		wp_add_inline_script('jsonmaker-inline', implode("\n", $script_lines));
 	}
 
 	private function get_current_url(): string {
-		$request_uri = isset($_SERVER['REQUEST_URI']) ? wp_unslash((string) $_SERVER['REQUEST_URI']) : '';
+		$request_uri_raw = filter_input(INPUT_SERVER, 'REQUEST_URI', FILTER_UNSAFE_RAW);
+		$request_uri = is_string($request_uri_raw) ? wp_unslash($request_uri_raw) : '';
+		$request_uri = esc_url_raw($request_uri);
 
 		return home_url($request_uri);
 	}
