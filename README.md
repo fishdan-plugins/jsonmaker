@@ -5,7 +5,7 @@
 
 Hierarchical link trees for WordPress pages: drop in the `[jsonmaker]` shortcode, manage nested URLs inline, and expose any node as live JSON.
 
-<div style="position: relative; padding-bottom: 56.25%; height: 0;"><iframe src="https://www.loom.com/embed/7d4b76327b22488985f079cb27f70f2c?sid=3b2665fb-bd60-43b2-8a18-dc4989b0a67f" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe></div>
+[![Watch the Jsonmaker walkthrough on Loom](https://cdn.loom.com/sessions/thumbnails/7d4b76327b22488985f079cb27f70f2c-78c9589b2983a335-full-play.gif)](https://www.loom.com/share/7d4b76327b22488985f079cb27f70f2c?sid=3b2665fb-bd60-43b2-8a18-dc4989b0a67f).
 
 ---
 
