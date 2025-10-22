@@ -1,10 +1,14 @@
 <?php
 /**
  * Plugin Name: Jsonmaker
+ * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.4
+ * Version: 0.1.5
+ * Requires at least: 6.0
+ * Requires PHP: 7.4
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
+ * Domain Path: /languages
  * Text Domain: jsonmaker
  * Author: Daniel Fishman
  * Author URI: https://www.fishdan.com
@@ -12,6 +16,45 @@
 
 if (! defined('ABSPATH')) {
 	exit;
+}
+
+if (! defined('JSONMAKER_VERSION')) {
+	define('JSONMAKER_VERSION', '0.1.5');
+}
+
+if (! function_exists('jm_fs')) {
+	/**
+	 * Provide a helper for accessing the Freemius SDK instance.
+	 */
+	function jm_fs() {
+		global $jm_fs;
+
+		if (! isset($jm_fs)) {
+			require_once dirname(__FILE__) . '/vendor/freemius/start.php';
+
+			$jm_fs = fs_dynamic_init([
+				'id' => '21365',
+				'slug' => 'json-maker',
+				'type' => 'plugin',
+				'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
+				'is_premium' => false,
+				'has_addons' => false,
+				'has_paid_plans' => false,
+				'menu' => [
+					'first-path' => 'plugins.php',
+					'account' => false,
+					'support' => false,
+				],
+			]);
+		}
+
+		return $jm_fs;
+	}
+
+	// Initialize the Freemius SDK.
+	jm_fs();
+	// Signal that the SDK finished loading.
+	do_action('jm_fs_loaded');
 }
 
 final class Jsonmaker_Plugin {
@@ -44,6 +87,29 @@ final class Jsonmaker_Plugin {
 		self::ensure_initial_tree();
 		self::instance()->register_rewrite();
 		flush_rewrite_rules();
+	}
+
+	public static function deactivate(): void {
+		flush_rewrite_rules();
+	}
+
+	public static function uninstall(): void {
+		delete_option(self::OPTION_NAME);
+
+		if (! function_exists('wp_roles') || ! class_exists('WP_Roles')) {
+			return;
+		}
+
+		$roles = wp_roles();
+		if (! $roles instanceof WP_Roles) {
+			return;
+		}
+
+		foreach ($roles->role_objects as $role) {
+			if ($role->has_cap(self::CAPABILITY)) {
+				$role->remove_cap(self::CAPABILITY);
+			}
+		}
 	}
 
 	private static function ensure_initial_tree(): void {
@@ -426,11 +492,11 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_action" value="delete_node" />';
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
+		echo '<button type="submit" class="jsonmaker-delete-button"';
 		if ($has_children) {
-			echo '<button type="submit" class="jsonmaker-delete-button" data-jsonmaker-has-children="1">';
-		} else {
-			echo '<button type="submit" class="jsonmaker-delete-button">';
+			echo ' data-jsonmaker-has-children="1" data-jsonmaker-message="' . esc_attr__('Remove child nodes before deleting this node.', 'jsonmaker') . '"';
 		}
+		echo '>';
 		echo esc_html__('Delete Node', 'jsonmaker');
 		echo '</button>';
 		echo '</form>';
@@ -671,7 +737,7 @@ final class Jsonmaker_Plugin {
 		$this->printed_assets = true;
 
 		if (! wp_style_is('jsonmaker-inline', 'registered')) {
-			wp_register_style('jsonmaker-inline', false, [], null);
+			wp_register_style('jsonmaker-inline', false, [], JSONMAKER_VERSION);
 		}
 		wp_enqueue_style('jsonmaker-inline');
 		$style_lines = [
@@ -698,7 +764,7 @@ final class Jsonmaker_Plugin {
 		wp_add_inline_style('jsonmaker-inline', implode("\n", $style_lines));
 
 		if (! wp_script_is('jsonmaker-inline', 'registered')) {
-			wp_register_script('jsonmaker-inline', '', [], null, true);
+			wp_register_script('jsonmaker-inline', false, [], JSONMAKER_VERSION, true);
 		}
 		wp_enqueue_script('jsonmaker-inline');
 		$script_lines = [
@@ -755,7 +821,11 @@ final class Jsonmaker_Plugin {
 			"\t}",
 			"\tif (deleteButton.dataset.jsonmakerHasChildren === '1') {",
 			"\t\tevent.preventDefault();",
-			"\t\twindow.alert('Remove child nodes before deleting this node.');",
+			"\t\tconst message = deleteButton.dataset.jsonmakerMessage;",
+			"\t\tif (message) {",
+			"\t\t\twindow.alert(message);",
+			"\t\t}",
+			"\t\treturn;",
 			"\t}",
 			"});"
 		];
@@ -808,4 +878,6 @@ final class Jsonmaker_Plugin {
 }
 
 register_activation_hook(__FILE__, ['Jsonmaker_Plugin', 'activate']);
+register_deactivation_hook(__FILE__, ['Jsonmaker_Plugin', 'deactivate']);
+register_uninstall_hook(__FILE__, ['Jsonmaker_Plugin', 'uninstall']);
 Jsonmaker_Plugin::instance();
