@@ -3,7 +3,7 @@
  * Plugin Name: Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.6
+ * Version: 0.1.7
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.1.6');
+	define('JSONMAKER_VERSION', '0.1.7');
 }
 
 if (! function_exists('jm_fs')) {
@@ -613,15 +613,55 @@ final class Jsonmaker_Plugin {
 				echo '<div class="jsonmaker-notice ' . esc_attr($class) . '">' . esc_html($message_text) . '</div>';
 			}
 		}
+		$sections = [];
 		if ($can_manage) {
+			ob_start();
 			$this->render_import_form($current_url, $tree);
+			$import_content = (string) ob_get_clean();
+			$import_section = $this->render_collapsible_section(
+				'import',
+				__('Bulk Import JSON', 'jsonmaker'),
+				$import_content,
+				false
+			);
+			if ($import_section !== '') {
+				$sections[] = $import_section;
+			}
+
+			ob_start();
 			echo '<pre class="jsonmaker-json">';
 			echo esc_html(wp_json_encode($this->prepare_public_node($tree), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 			echo '</pre>';
+			$json_content = (string) ob_get_clean();
+			$json_section = $this->render_collapsible_section(
+				'json',
+				__('Current JSON', 'jsonmaker'),
+				$json_content,
+				false
+			);
+			if ($json_section !== '') {
+				$sections[] = $json_section;
+			}
 		}
+
+		ob_start();
 		echo '<div class="jsonmaker-tree">';
 		$this->render_node($tree);
 		echo '</div>';
+		$tree_content = (string) ob_get_clean();
+		$tree_section = $this->render_collapsible_section(
+			'tree',
+			$can_manage ? __('Editing Tree', 'jsonmaker') : __('Link Tree', 'jsonmaker'),
+			$tree_content,
+			true
+		);
+		if ($tree_section !== '') {
+			$sections[] = $tree_section;
+		}
+
+		foreach ($sections as $section_html) {
+			echo $section_html;
+		}
 
 		return (string) ob_get_clean();
 	}
@@ -648,8 +688,16 @@ final class Jsonmaker_Plugin {
 			$schema_link
 		);
 
-		echo '<h3>' . esc_html__('Bulk Import JSON', 'jsonmaker') . '</h3>';
-		echo '<p>' . wp_kses($description_text, ['a' => ['href' => [], 'target' => [], 'rel' => []]]) . '</p>';
+		echo '<p class="jsonmaker-import__intro">' . wp_kses(
+			$description_text,
+			[
+				'a' => [
+					'href' => [],
+					'target' => [],
+					'rel' => [],
+				],
+			]
+		) . '</p>';
 		echo '<div class="jsonmaker-import__mode">';
 		echo '<span class="jsonmaker-import__label">' . esc_html__('Mode', 'jsonmaker') . '</span>';
 		echo '<label><input type="radio" name="jsonmaker_import_mode" value="append" checked /> ' . esc_html__('Append under an existing node', 'jsonmaker') . '</label>';
@@ -674,6 +722,39 @@ final class Jsonmaker_Plugin {
 		echo '</div>';
 		echo '</form>';
 		echo '</div>';
+	}
+
+	private function render_collapsible_section(string $id, string $title, string $content, bool $default_open = true): string {
+		$content = trim($content);
+
+		if ($content === '') {
+			return '';
+		}
+
+		$section_key = sanitize_key($id);
+		if ($section_key === '') {
+			$section_key = 'section';
+		}
+
+		$toggle_id = 'jsonmaker-toggle-' . $section_key;
+		$content_id = 'jsonmaker-section-' . $section_key;
+		$default_attr = $default_open ? 'open' : 'closed';
+		$aria_expanded = $default_open ? 'true' : 'false';
+
+		$output = '<div class="jsonmaker-section" data-jsonmaker-section="' . esc_attr($section_key) . '" data-jsonmaker-section-default="' . esc_attr($default_attr) . '">';
+		$output .= '<div class="jsonmaker-section__header">';
+		$indicator_symbol = $default_open ? '−' : '+';
+		$output .= '<button type="button" id="' . esc_attr($toggle_id) . '" class="jsonmaker-section__toggle" data-jsonmaker-section-toggle="' . esc_attr($section_key) . '" aria-controls="' . esc_attr($content_id) . '" aria-expanded="' . esc_attr($aria_expanded) . '">';
+		$output .= '<span class="jsonmaker-section__indicator" data-jsonmaker-section-indicator aria-hidden="true">' . esc_html($indicator_symbol) . '</span>';
+		$output .= '<span class="jsonmaker-section__title"><strong>' . esc_html($title) . '</strong></span>';
+		$output .= '</button>';
+		$output .= '</div>';
+		$output .= '<div id="' . esc_attr($content_id) . '" class="jsonmaker-section__content">';
+		$output .= $content;
+		$output .= '</div>';
+		$output .= '</div>';
+
+		return $output;
 	}
 
 	private function build_import_target_options(array $node, array &$options, int $depth = 0): void {
@@ -840,6 +921,8 @@ final class Jsonmaker_Plugin {
 		echo esc_html__('Delete Node', 'jsonmaker');
 		echo '</button>';
 		echo '</form>';
+		$api_url = esc_url(home_url('/json/' . rawurlencode($target_slug) . '.json'));
+		echo ' <a class="jsonmaker-view-button" href="' . $api_url . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'jsonmaker') . '</a>';
 	}
 
 	private function get_tree(): array {
@@ -1102,11 +1185,21 @@ final class Jsonmaker_Plugin {
 			'.jsonmaker-node__title a {text-decoration:none;}',
 			'.jsonmaker-add-button,',
 			'.jsonmaker-edit-button,',
-			'.jsonmaker-delete-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer;}',
+			'.jsonmaker-delete-button,',
+			'.jsonmaker-view-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer; display:inline-block; text-decoration:none; background:#f8f9fa; border:1px solid #cbd5e0; border-radius:3px; color:#1a202c;}',
 			'.jsonmaker-delete-form {display:inline; margin:0;}',
 			'.jsonmaker-delete-button {margin-left:0.25rem;}',
+			'.jsonmaker-view-button {margin-left:0.25rem;}',
+			'.jsonmaker-section {border:1px solid #d9d9d9; border-radius:6px; background:#fff; margin-bottom:1rem; box-shadow:0 1px 2px rgba(16,24,40,0.04);}',
+			'.jsonmaker-section__header {background:#f3f4f6; padding:0.6rem 0.9rem; border-bottom:1px solid #d9d9d9;}',
+			'.jsonmaker-section__toggle {display:flex; align-items:center; justify-content:flex-start; gap:0.5rem; width:100%; background:none; border:0; padding:0; font-size:1rem; cursor:pointer; color:#1a202c;}',
+			'.jsonmaker-section__toggle:focus {outline:2px solid #3182ce; outline-offset:2px;}',
+			'.jsonmaker-section__title {display:flex; align-items:center; gap:0.5rem;}',
+			'.jsonmaker-section__indicator {font-size:1.25rem; line-height:1; margin-right:0.25rem; width:1.25rem; text-align:center; transition:color 0.2s ease-in-out;}',
+			'.jsonmaker-section__content {padding:0.9rem;}',
 			'.jsonmaker-import {margin-bottom:1rem;}',
 			'.jsonmaker-import form {background:#f9f9f9; border:1px solid #ccc; padding:0.75rem;}',
+			'.jsonmaker-import__intro {margin-top:0; margin-bottom:0.75rem;}',
 			'.jsonmaker-import__label {display:block; font-weight:600; margin-bottom:0.25rem;}',
 			'.jsonmaker-import__mode {display:flex; flex-direction:column; gap:0.25rem; margin-bottom:0.5rem;}',
 			'.jsonmaker-import__mode label {font-weight:400;}',
@@ -1131,6 +1224,89 @@ final class Jsonmaker_Plugin {
 		wp_enqueue_script('jsonmaker-inline');
 		$confirm_replace = esc_js(__('Confirm you want to erase the entire tree and replace it?', 'jsonmaker'));
 		$script_lines = [
+			"const jsonmakerSectionCookiePrefix = 'jsonmaker_section_';",
+			"function jsonmakerSetSectionState(id, isOpen) {",
+			"\tconst maxAge = 60 * 60 * 24 * 365;",
+			"\tdocument.cookie = jsonmakerSectionCookiePrefix + id + '=' + (isOpen ? 'open' : 'closed') + '; path=/; max-age=' + maxAge;",
+			"}",
+			"function jsonmakerGetSectionState(id) {",
+			"\tconst pattern = new RegExp('(?:^|; )' + jsonmakerSectionCookiePrefix + id + '=([^;]*)');",
+			"\tconst match = document.cookie.match(pattern);",
+			"\treturn match ? match[1] : null;",
+			"}",
+			"function jsonmakerApplySectionState(section) {",
+			"\tconst id = section.dataset.jsonmakerSection;",
+			"\tif (!id) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst defaultOpen = section.dataset.jsonmakerSectionDefault === 'open';",
+			"\tconst stored = jsonmakerGetSectionState(id);",
+			"\tconst isOpen = stored === null ? defaultOpen : stored === 'open';",
+			"\tconst content = section.querySelector('.jsonmaker-section__content');",
+			"\tconst toggle = section.querySelector('[data-jsonmaker-section-toggle]');",
+			"\tconst indicator = section.querySelector('[data-jsonmaker-section-indicator]');",
+			"\tif (!content || !toggle) {",
+			"\t\treturn;",
+			"\t}",
+			"\tif (isOpen) {",
+			"\t\tcontent.removeAttribute('hidden');",
+			"\t\ttoggle.setAttribute('aria-expanded', 'true');",
+			"\t\tsection.classList.remove('jsonmaker-section--collapsed');",
+			"\t\tif (indicator) {",
+			"\t\t\tindicator.textContent = '−';",
+			"\t\t}",
+			"\t} else {",
+			"\t\tcontent.setAttribute('hidden', '');",
+			"\t\ttoggle.setAttribute('aria-expanded', 'false');",
+			"\t\tsection.classList.add('jsonmaker-section--collapsed');",
+			"\t\tif (indicator) {",
+			"\t\t\tindicator.textContent = '+';",
+			"\t\t}",
+			"\t}",
+			"}",
+			"document.addEventListener('DOMContentLoaded', function () {",
+			"\tdocument.querySelectorAll('[data-jsonmaker-section]').forEach(function (section) {",
+			"\t\tjsonmakerApplySectionState(section);",
+			"\t});",
+			"});",
+			"document.addEventListener('click', function (event) {",
+			"\tconst toggle = event.target.closest('[data-jsonmaker-section-toggle]');",
+			"\tif (!toggle) {",
+			"\t\treturn;",
+			"\t}",
+			"\tevent.preventDefault();",
+			"\tconst id = toggle.dataset.jsonmakerSectionToggle;",
+			"\tif (!id) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst section = document.querySelector('[data-jsonmaker-section=\"' + id + '\"]');",
+			"\tif (!section) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst content = section.querySelector('.jsonmaker-section__content');",
+			"\tconst indicator = section.querySelector('[data-jsonmaker-section-indicator]');",
+			"\tif (!content) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst isOpen = !content.hasAttribute('hidden');",
+			"\tif (isOpen) {",
+			"\t\tcontent.setAttribute('hidden', '');",
+			"\t\ttoggle.setAttribute('aria-expanded', 'false');",
+			"\t\tsection.classList.add('jsonmaker-section--collapsed');",
+			"\t\tjsonmakerSetSectionState(id, false);",
+			"\t\tif (indicator) {",
+			"\t\t\tindicator.textContent = '+';",
+			"\t\t}",
+			"\t} else {",
+			"\t\tcontent.removeAttribute('hidden');",
+			"\t\ttoggle.setAttribute('aria-expanded', 'true');",
+			"\t\tsection.classList.remove('jsonmaker-section--collapsed');",
+			"\t\tjsonmakerSetSectionState(id, true);",
+			"\t\tif (indicator) {",
+			"\t\t\tindicator.textContent = '−';",
+			"\t\t}",
+			"\t}",
+			"});",
 			"const jsonmakerConfirmReplace = '" . $confirm_replace . "';",
 			"document.addEventListener('click', function (event) {",
 			"\tconst addButton = event.target.closest('.jsonmaker-add-button');",

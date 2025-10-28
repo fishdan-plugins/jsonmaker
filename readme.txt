@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.1.6
+Stable tag: 0.1.7
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,12 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.1.7 =
+* Wrapped bulk import, JSON preview, and the editing tree in collapsible sections with remembered state per user.
+* Added “View Node” shortcut links beside each node’s actions for quick JSON inspection.
+* Defaulted management panels to start closed for new visitors while keeping the editor open.
+* Refined Freemius admin fallbacks and section styling for a more consistent dashboard experience.
 
 = 0.1.6 =
 * Added a published JSON schema and linked helper text for quick validation.
