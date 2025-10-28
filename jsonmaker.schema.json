@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsonmaker.local/jsonmaker.schema.json",
+  "title": "Jsonmaker Node",
+  "description": "Schema for the hierarchical JSON payloads emitted by the Jsonmaker WordPress plugin.",
+  "$ref": "#/$defs/node",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "description": "A node in the Jsonmaker tree.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display title for the node."
+        },
+        "value": {
+          "type": "string",
+          "description": "Optional URL or plain-text value associated with the node."
+        },
+        "children": {
+          "type": "array",
+          "description": "Optional array of child nodes.",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "title": "Fishdan",
+          "value": "https://www.fishdan.com",
+          "children": [
+            {
+              "title": "Blog",
+              "value": "https://www.fishdan.com/blog"
+            },
+            {
+              "title": "Projects",
+              "children": [
+                {
+                  "title": "Jsonmaker",
+                  "value": "https://www.fishdan.com/jsonmaker"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

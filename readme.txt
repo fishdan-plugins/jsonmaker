@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.1.5
+Stable tag: 0.1.6
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,12 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.1.6 =
+* Added a published JSON schema and linked helper text for quick validation.
+* Introduced bulk import with append/replace modes, optional append targeting, and duplicate-title safeguards.
+* Added slug normalization for JSON endpoint requests so mixed-case and spaced URLs resolve correctly.
+* Hardened Freemius admin bootstrapping by pre-populating the screen title and falling back to the bundled icon.
 
 = 0.1.5 =
 * Added uninstall cleanup for the stored tree and custom capability, plus deactivation rewrite flushing.

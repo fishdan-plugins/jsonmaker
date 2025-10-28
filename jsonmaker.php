@@ -3,7 +3,7 @@
  * Plugin Name: Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.5
+ * Version: 0.1.6
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.1.5');
+	define('JSONMAKER_VERSION', '0.1.6');
 }
 
 if (! function_exists('jm_fs')) {
@@ -80,6 +80,13 @@ final class Jsonmaker_Plugin {
 		add_shortcode('jsonmaker', [$this, 'render_shortcode']);
 		add_action('send_headers', [$this, 'maybe_add_cors_headers']);
 		add_filter('redirect_canonical', [$this, 'maybe_disable_canonical_redirect'], 10, 2);
+		add_action('load-admin_page_json-maker', [$this, 'ensure_admin_connect_title'], 5);
+		add_action('load-admin_page_json-maker-network', [$this, 'ensure_admin_connect_title'], 5);
+
+		$fs = jm_fs();
+		if (is_object($fs) && method_exists($fs, 'add_filter')) {
+			$fs->add_filter('plugin_icon', [$this, 'filter_freemius_plugin_icon']);
+		}
 	}
 
 	public static function activate(): void {
@@ -167,6 +174,8 @@ final class Jsonmaker_Plugin {
 			$this->handle_delete_submission();
 		} elseif ($action === 'edit_node') {
 			$this->handle_edit_submission();
+		} elseif ($action === 'import_json') {
+			$this->handle_import_submission();
 		}
 	}
 
@@ -298,6 +307,247 @@ final class Jsonmaker_Plugin {
 		$this->redirect_with_message('node_not_found');
 	}
 
+	private function handle_import_submission(): void {
+		$json_raw = filter_input(INPUT_POST, 'jsonmaker_payload', FILTER_UNSAFE_RAW);
+
+		if (! is_string($json_raw)) {
+			return;
+		}
+
+		check_admin_referer('jsonmaker_import', 'jsonmaker_import_nonce');
+
+		$mode_raw = filter_input(INPUT_POST, 'jsonmaker_import_mode', FILTER_UNSAFE_RAW);
+		$mode = is_string($mode_raw) ? sanitize_key(wp_unslash($mode_raw)) : 'replace';
+		if ($mode !== 'append') {
+			$mode = 'replace';
+		}
+
+		$target_slug = '';
+		if ($mode === 'append') {
+			$target_raw = filter_input(INPUT_POST, 'jsonmaker_import_target', FILTER_UNSAFE_RAW);
+
+			if (! is_string($target_raw)) {
+				$this->redirect_with_message('import_target_missing');
+			}
+
+			$target_slug = sanitize_key(wp_unslash($target_raw));
+
+			if ($target_slug === '') {
+				$this->redirect_with_message('import_target_missing');
+			}
+		}
+
+		$payload = trim((string) wp_unslash($json_raw));
+
+		if ($payload === '') {
+			$this->redirect_with_message('missing_fields');
+		}
+
+		$decoded = json_decode($payload, true);
+
+		if (! is_array($decoded)) {
+			$this->redirect_with_message('import_invalid_json');
+		}
+
+		$error_code = '';
+		if ($mode === 'replace') {
+			$tree = $this->normalize_import_tree($decoded, $error_code);
+
+			if ($tree === null || $error_code !== '') {
+				$this->redirect_with_message($error_code !== '' ? $error_code : 'import_invalid_structure');
+			}
+
+			update_option(self::OPTION_NAME, $tree);
+			$this->redirect_with_message('import_success', true);
+		}
+
+		$current_tree = $this->get_tree();
+		$node = $this->normalize_import_tree($decoded, $error_code, $current_tree);
+
+		if ($node === null || $error_code !== '') {
+			$this->redirect_with_message($error_code !== '' ? $error_code : 'import_invalid_structure');
+		}
+
+		if (! $this->add_child_node($current_tree, $target_slug, $node)) {
+			$this->redirect_with_message('import_target_not_found');
+		}
+
+		update_option(self::OPTION_NAME, $current_tree);
+		$this->redirect_with_message('import_success', true);
+	}
+
+	private function normalize_import_tree(array $root, string &$error_code, ?array $existing_tree = null): ?array {
+		$used_titles = [];
+		$used_slugs = [];
+
+		if ($existing_tree !== null) {
+			$this->collect_import_keys($existing_tree, $used_titles, $used_slugs);
+		}
+
+		return $this->normalize_import_node($root, $used_titles, $used_slugs, $error_code);
+	}
+
+	private function collect_import_keys(array $node, array &$titles, array &$slugs): void {
+		$title = isset($node['title']) ? (string) $node['title'] : '';
+		$title_key = $this->normalize_title_key($title);
+
+		if ($title_key !== '') {
+			$titles[$title_key] = true;
+		}
+
+		$slug = isset($node['slug']) ? (string) $node['slug'] : '';
+		if ($slug !== '') {
+			$slugs[$slug] = true;
+		}
+
+		if (empty($node['children']) || ! is_array($node['children'])) {
+			return;
+		}
+
+		foreach ($node['children'] as $child) {
+			if (! is_array($child)) {
+				continue;
+			}
+
+			$this->collect_import_keys($child, $titles, $slugs);
+		}
+	}
+
+	private function normalize_import_node(array $input, array &$used_titles, array &$used_slugs, string &$error_code): ?array {
+		$allowed_keys = ['title', 'value', 'children'];
+
+		foreach ($input as $key => $_value) {
+			if (! in_array($key, $allowed_keys, true)) {
+				$error_code = 'import_invalid_structure';
+
+				return null;
+			}
+		}
+
+		if (! array_key_exists('title', $input) || ! is_string($input['title'])) {
+			$error_code = 'import_invalid_structure';
+
+			return null;
+		}
+
+		$title = sanitize_text_field($input['title']);
+		$title = trim($title);
+
+		if ($title === '') {
+			$error_code = 'import_invalid_structure';
+
+			return null;
+		}
+
+		$title_key = $this->normalize_title_key($title);
+
+		if ($title_key !== '' && isset($used_titles[$title_key])) {
+			$error_code = 'import_duplicate_title';
+
+			return null;
+		}
+
+		if ($title_key !== '') {
+			$used_titles[$title_key] = true;
+		}
+
+		$slug_base = sanitize_title($title);
+
+		if ($slug_base === '') {
+			$slug_base = 'node';
+		}
+
+		$slug = $slug_base;
+		$index = 2;
+
+		while ($slug === '' || isset($used_slugs[$slug])) {
+			$slug = $slug_base . '-' . $index;
+			$index++;
+		}
+
+		$used_slugs[$slug] = true;
+
+		$node = [
+			'title' => $title,
+			'slug' => $slug,
+			'children' => [],
+		];
+
+		if (array_key_exists('value', $input)) {
+			if ($input['value'] !== null && ! is_string($input['value'])) {
+				$error_code = 'import_invalid_structure';
+
+				return null;
+			}
+
+			if (is_string($input['value'])) {
+				$value = sanitize_text_field($input['value']);
+				$value = trim($value);
+
+				if ($value !== '') {
+					$node['value'] = $value;
+				}
+			}
+		}
+
+		if (array_key_exists('children', $input)) {
+			if (! is_array($input['children'])) {
+				$error_code = 'import_invalid_structure';
+
+				return null;
+			}
+
+			foreach ($input['children'] as $child_input) {
+				if (! is_array($child_input)) {
+					$error_code = 'import_invalid_structure';
+
+					return null;
+				}
+
+				$child = $this->normalize_import_node($child_input, $used_titles, $used_slugs, $error_code);
+
+				if ($child === null) {
+					return null;
+				}
+
+				$node['children'][] = $child;
+			}
+		}
+
+		return $node;
+	}
+
+	private function normalize_title_key(string $title): string {
+		if ($title === '') {
+			return '';
+		}
+
+		if (function_exists('mb_strtolower')) {
+			return mb_strtolower($title, 'UTF-8');
+		}
+
+		return strtolower($title);
+	}
+
+	private function normalize_request_slug(string $value): string {
+		$decoded = rawurldecode($value);
+		$decoded = trim($decoded);
+
+		if ($decoded === '') {
+			return '';
+		}
+
+		$normalized = sanitize_title($decoded);
+
+		if ($normalized !== '') {
+			return $normalized;
+		}
+
+		$fallback = sanitize_key($decoded);
+
+		return is_string($fallback) ? $fallback : '';
+	}
+
 	public function maybe_output_json(): void {
 		$requested = get_query_var('jsonmaker_node');
 
@@ -315,7 +565,13 @@ final class Jsonmaker_Plugin {
 			exit;
 		}
 
-		$node = $this->find_node($this->get_tree(), sanitize_key($requested));
+		$normalized_slug = $this->normalize_request_slug($requested);
+		if ($normalized_slug === '') {
+			status_header(404);
+			wp_send_json(['error' => 'Node not found'], 404);
+		}
+
+		$node = $this->find_node($this->get_tree(), $normalized_slug);
 
 		if ($node === null) {
 			status_header(404);
@@ -328,6 +584,9 @@ final class Jsonmaker_Plugin {
 	public function render_shortcode(): string {
 		$tree = $this->get_tree();
 		$this->maybe_print_assets();
+
+		$can_manage = current_user_can(self::CAPABILITY);
+		$current_url = $can_manage ? $this->get_current_url() : '';
 
 		$notice_code = '';
 		$notice_status = 'error';
@@ -346,7 +605,7 @@ final class Jsonmaker_Plugin {
 		}
 
 		ob_start();
-		if ($notice_code !== '' && current_user_can(self::CAPABILITY)) {
+		if ($notice_code !== '' && $can_manage) {
 			$message_text = $this->get_notice_text($notice_code);
 
 			if ($message_text !== '') {
@@ -354,7 +613,8 @@ final class Jsonmaker_Plugin {
 				echo '<div class="jsonmaker-notice ' . esc_attr($class) . '">' . esc_html($message_text) . '</div>';
 			}
 		}
-		if (current_user_can(self::CAPABILITY)) {
+		if ($can_manage) {
+			$this->render_import_form($current_url, $tree);
 			echo '<pre class="jsonmaker-json">';
 			echo esc_html(wp_json_encode($this->prepare_public_node($tree), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 			echo '</pre>';
@@ -364,6 +624,86 @@ final class Jsonmaker_Plugin {
 		echo '</div>';
 
 		return (string) ob_get_clean();
+	}
+
+	private function render_import_form(string $redirect, array $tree): void {
+		if ($redirect === '') {
+			return;
+		}
+
+		$textarea_id = 'jsonmaker-import-payload';
+		$target_id = 'jsonmaker-import-target';
+		$options = [];
+		$this->build_import_target_options($tree, $options);
+
+		echo '<div class="jsonmaker-import">';
+		echo '<form method="post" action="' . esc_url($redirect) . '">';
+		wp_nonce_field('jsonmaker_import', 'jsonmaker_import_nonce');
+		echo '<input type="hidden" name="jsonmaker_action" value="import_json" />';
+		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
+		$schema_url = plugins_url('jsonmaker.schema.json', __FILE__);
+		$schema_link = '<a href="' . esc_url($schema_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Jsonmaker schema', 'jsonmaker') . '</a>';
+		$description_text = sprintf(
+			__('Paste JSON that matches the %s to replace the tree or append a branch.', 'jsonmaker'),
+			$schema_link
+		);
+
+		echo '<h3>' . esc_html__('Bulk Import JSON', 'jsonmaker') . '</h3>';
+		echo '<p>' . wp_kses($description_text, ['a' => ['href' => [], 'target' => [], 'rel' => []]]) . '</p>';
+		echo '<div class="jsonmaker-import__mode">';
+		echo '<span class="jsonmaker-import__label">' . esc_html__('Mode', 'jsonmaker') . '</span>';
+		echo '<label><input type="radio" name="jsonmaker_import_mode" value="append" checked /> ' . esc_html__('Append under an existing node', 'jsonmaker') . '</label>';
+		echo '<label><input type="radio" name="jsonmaker_import_mode" value="replace" /> ' . esc_html__('Replace entire tree', 'jsonmaker') . '</label>';
+		echo '</div>';
+		if (! empty($options)) {
+			echo '<div class="jsonmaker-import__target">';
+			echo '<label for="' . esc_attr($target_id) . '" class="jsonmaker-import__label">' . esc_html__('Append target', 'jsonmaker') . '</label>';
+			echo '<select id="' . esc_attr($target_id) . '" name="jsonmaker_import_target" data-jsonmaker-import-target required>';
+			echo '<option value="" disabled selected>' . esc_html__('Select a node...', 'jsonmaker') . '</option>';
+			foreach ($options as $option) {
+				echo '<option value="' . esc_attr($option['slug']) . '">' . esc_html($option['label']) . '</option>';
+			}
+			echo '</select>';
+			echo '<p class="jsonmaker-import__hint">' . esc_html__('Used when Mode is set to Append.', 'jsonmaker') . '</p>';
+			echo '</div>';
+		}
+		echo '<label for="' . esc_attr($textarea_id) . '" class="jsonmaker-import__label">' . esc_html__('JSON payload', 'jsonmaker') . '</label>';
+		echo '<textarea id="' . esc_attr($textarea_id) . '" name="jsonmaker_payload" rows="10" required></textarea>';
+		echo '<div class="jsonmaker-import__actions">';
+		echo '<button type="submit">' . esc_html__('Import JSON', 'jsonmaker') . '</button>';
+		echo '</div>';
+		echo '</form>';
+		echo '</div>';
+	}
+
+	private function build_import_target_options(array $node, array &$options, int $depth = 0): void {
+		$title = isset($node['title']) ? (string) $node['title'] : '';
+		$slug = isset($node['slug']) ? (string) $node['slug'] : '';
+
+		if ($slug !== '') {
+			$label = $title !== '' ? $title : $slug;
+
+			if ($depth > 0) {
+				$label = str_repeat('-- ', $depth) . $label;
+			}
+
+			$options[] = [
+				'slug' => $slug,
+				'label' => sprintf('%s (%s)', $label, $slug),
+			];
+		}
+
+		if (empty($node['children']) || ! is_array($node['children'])) {
+			return;
+		}
+
+		foreach ($node['children'] as $child) {
+			if (! is_array($child)) {
+				continue;
+			}
+
+			$this->build_import_target_options($child, $options, $depth + 1);
+		}
 	}
 
 	private function render_node(array $node): void {
@@ -724,6 +1064,18 @@ final class Jsonmaker_Plugin {
 				return __('Remove child nodes before deleting this node.', 'jsonmaker');
 			case 'title_exists':
 				return __('A node with that title already exists. Choose a different title.', 'jsonmaker');
+			case 'import_success':
+				return __('Tree imported.', 'jsonmaker');
+			case 'import_invalid_json':
+				return __('Unable to parse JSON. Check the syntax and try again.', 'jsonmaker');
+			case 'import_invalid_structure':
+				return __('The JSON does not match the expected schema.', 'jsonmaker');
+			case 'import_duplicate_title':
+				return __('Each node title must be unique. Resolve duplicates and try again.', 'jsonmaker');
+			case 'import_target_missing':
+				return __('Choose a node to append the imported data to.', 'jsonmaker');
+			case 'import_target_not_found':
+				return __('Unable to find the selected append target.', 'jsonmaker');
 			default:
 				return '';
 		}
@@ -753,6 +1105,16 @@ final class Jsonmaker_Plugin {
 			'.jsonmaker-delete-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer;}',
 			'.jsonmaker-delete-form {display:inline; margin:0;}',
 			'.jsonmaker-delete-button {margin-left:0.25rem;}',
+			'.jsonmaker-import {margin-bottom:1rem;}',
+			'.jsonmaker-import form {background:#f9f9f9; border:1px solid #ccc; padding:0.75rem;}',
+			'.jsonmaker-import__label {display:block; font-weight:600; margin-bottom:0.25rem;}',
+			'.jsonmaker-import__mode {display:flex; flex-direction:column; gap:0.25rem; margin-bottom:0.5rem;}',
+			'.jsonmaker-import__mode label {font-weight:400;}',
+			'.jsonmaker-import__target {margin-bottom:0.75rem;}',
+			'.jsonmaker-import select {width:100%; max-width:20rem;}',
+			'.jsonmaker-import__hint {margin:0.25rem 0 0; font-size:0.85rem; color:#555;}',
+			'.jsonmaker-import textarea {width:100%; font-family: Menlo, Consolas, monospace; min-height:10rem;}',
+			'.jsonmaker-import__actions {margin-top:0.5rem;}',
 			'.jsonmaker-add-form,',
 			'.jsonmaker-edit-form {margin-top:0.5rem;}',
 			'.jsonmaker-add-form form,',
@@ -767,7 +1129,9 @@ final class Jsonmaker_Plugin {
 			wp_register_script('jsonmaker-inline', false, [], JSONMAKER_VERSION, true);
 		}
 		wp_enqueue_script('jsonmaker-inline');
+		$confirm_replace = esc_js(__('Confirm you want to erase the entire tree and replace it?', 'jsonmaker'));
 		$script_lines = [
+			"const jsonmakerConfirmReplace = '" . $confirm_replace . "';",
 			"document.addEventListener('click', function (event) {",
 			"\tconst addButton = event.target.closest('.jsonmaker-add-button');",
 			"\tif (addButton) {",
@@ -827,6 +1191,32 @@ final class Jsonmaker_Plugin {
 			"\t\t}",
 			"\t\treturn;",
 			"\t}",
+			"});",
+			"document.addEventListener('change', function (event) {",
+			"\tif (!event.target) {",
+			"\t\treturn;",
+			"\t}",
+			"\tif (event.target.name === 'jsonmaker_import_mode') {",
+			"\t\tconst targetSelect = document.querySelector('[data-jsonmaker-import-target]');",
+			"\t\tconst appendRadio = document.querySelector('input[name=\"jsonmaker_import_mode\"][value=\"append\"]');",
+			"\t\tif (!targetSelect) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tif (event.target.value === 'append') {",
+			"\t\t\ttargetSelect.setAttribute('required', '');",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tif (event.target.value === 'replace') {",
+			"\t\t\ttargetSelect.removeAttribute('required');",
+			"\t\t\tif (!window.confirm(jsonmakerConfirmReplace)) {",
+			"\t\t\t\tif (appendRadio) {",
+			"\t\t\t\t\tappendRadio.checked = true;",
+			"\t\t\t\t\tappendRadio.dispatchEvent(new Event('change', { bubbles: true }));",
+			"\t\t\t\t}",
+			"\t\t\t\treturn;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
 			"});"
 		];
 		wp_add_inline_script('jsonmaker-inline', implode("\n", $script_lines));
@@ -874,6 +1264,24 @@ final class Jsonmaker_Plugin {
 		header('Access-Control-Allow-Origin: *');
 		header('Access-Control-Allow-Methods: GET, OPTIONS');
 		header('Access-Control-Allow-Headers: Content-Type');
+	}
+
+	public function ensure_admin_connect_title(): void {
+		global $title;
+
+		if (! is_string($title) || $title === '') {
+			$title = __('Jsonmaker', 'jsonmaker');
+		}
+	}
+
+	public function filter_freemius_plugin_icon($current) {
+		if (is_string($current) && $current !== '') {
+			return $current;
+		}
+
+		$fallback = plugin_dir_path(__FILE__) . 'vendor/freemius/assets/img/plugin-icon.png';
+
+		return $fallback;
 	}
 }
 
