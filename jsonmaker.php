@@ -36,7 +36,9 @@ if (! function_exists('jm_fs')) {
 		$sdk_path = __DIR__ . '/vendor/freemius/start.php';
 
 		if (! file_exists($sdk_path)) {
-			error_log('fishdan Jsonmaker: Freemius SDK loader not found.');
+			if (defined('WP_DEBUG') && WP_DEBUG) {
+				error_log('fishdan Jsonmaker: Freemius SDK loader not found.');
+			}
 			$jm_fs = false;
 
 			return $jm_fs;
@@ -45,7 +47,9 @@ if (! function_exists('jm_fs')) {
 		require_once $sdk_path;
 
 		if (! function_exists('fs_dynamic_init')) {
-			error_log('fishdan Jsonmaker: Freemius SDK failed to initialize.');
+			if (defined('WP_DEBUG') && WP_DEBUG) {
+				error_log('fishdan Jsonmaker: Freemius SDK failed to initialize.');
+			}
 			$jm_fs = false;
 
 			return $jm_fs;
@@ -686,6 +690,7 @@ final class Jsonmaker_Plugin {
 		}
 
 		foreach ($sections as $section_html) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_collapsible_section() returns escaped markup.
 			echo $section_html;
 		}
 
@@ -709,6 +714,7 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
 		$schema_url = plugins_url('jsonmaker.schema.json', __FILE__);
 		$schema_link = '<a href="' . esc_url($schema_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('fishdan Jsonmaker schema', 'fishdan-jsonmaker') . '</a>';
+		// translators: %s is a link to the fishdan Jsonmaker schema documentation.
 		$description_text = sprintf(
 			__('Paste JSON that matches the %s to replace the tree or append a branch.', 'fishdan-jsonmaker'),
 			$schema_link
@@ -954,8 +960,8 @@ final class Jsonmaker_Plugin {
 		echo esc_html__('Delete Node', 'fishdan-jsonmaker');
 		echo '</button>';
 		echo '</form>';
-		$api_url = esc_url(home_url('/json/' . rawurlencode($target_slug) . '.json'));
-		echo ' <a class="jsonmaker-view-button" href="' . $api_url . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
+		$api_url = home_url('/json/' . rawurlencode($target_slug) . '.json');
+		echo ' <a class="jsonmaker-view-button" href="' . esc_url($api_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
 	}
 
 	private function get_tree(): array {
