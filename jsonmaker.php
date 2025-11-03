@@ -708,8 +708,8 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
 		$schema_url = plugins_url('jsonmaker.schema.json', __FILE__);
 		$schema_link = '<a href="' . esc_url($schema_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('fishdan Jsonmaker schema', 'fishdan-jsonmaker') . '</a>';
-		/* translators: %s is a link to the fishdan Jsonmaker schema documentation. */
 		$description_text = sprintf(
+			/* translators: %s is a link to the fishdan Jsonmaker schema documentation. */
 			__('Paste JSON that matches the %s to replace the tree or append a branch.', 'fishdan-jsonmaker'),
 			$schema_link
 		);
