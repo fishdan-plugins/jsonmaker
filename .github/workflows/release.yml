@@ -23,12 +23,12 @@ jobs:
       - name: Derive tag + zip name
         run: |
           echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-          echo "ZIP_NAME=jsonmaker.zip" >> $GITHUB_ENV
+          echo "ZIP_NAME=fishdan-jsonmaker.zip" >> $GITHUB_ENV
 
       - name: Verify plugin header
         run: |
           test -f jsonmaker.php
-          grep -q "Plugin Name:.*Jsonmaker" jsonmaker.php
+          grep -q "Plugin Name:.*fishdan Jsonmaker" jsonmaker.php
 
       - name: Ensure version matches tag
         run: |
@@ -45,7 +45,7 @@ jobs:
 
       - name: Build plugin ZIP (POSIX paths)
         run: |
-          git archive --format=zip --output "$ZIP_NAME" --prefix=jsonmaker/ "$GITHUB_SHA"
+          git archive --format=zip --output "$ZIP_NAME" --prefix=fishdan-jsonmaker/ "$GITHUB_SHA"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

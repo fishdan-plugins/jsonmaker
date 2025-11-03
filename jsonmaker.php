@@ -1,15 +1,15 @@
 <?php
 /**
- * Plugin Name: Jsonmaker
+ * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.1.7
+ * Version: 0.2.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
  * License URI: https://opensource.org/licenses/MIT
  * Domain Path: /languages
- * Text Domain: jsonmaker
+ * Text Domain: fishdan-jsonmaker
  * Author: Daniel Fishman
  * Author URI: https://www.fishdan.com
  */
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.1.7');
+	define('JSONMAKER_VERSION', '0.2.0');
 }
 
 if (! function_exists('jm_fs')) {
@@ -29,32 +29,58 @@ if (! function_exists('jm_fs')) {
 	function jm_fs() {
 		global $jm_fs;
 
-		if (! isset($jm_fs)) {
-			require_once dirname(__FILE__) . '/vendor/freemius/start.php';
-
-			$jm_fs = fs_dynamic_init([
-				'id' => '21365',
-				'slug' => 'json-maker',
-				'type' => 'plugin',
-				'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
-				'is_premium' => false,
-				'has_addons' => false,
-				'has_paid_plans' => false,
-				'menu' => [
-					'first-path' => 'plugins.php',
-					'account' => false,
-					'support' => false,
-				],
-			]);
+		if (isset($jm_fs)) {
+			return $jm_fs;
 		}
+
+		$sdk_path = __DIR__ . '/vendor/freemius/start.php';
+
+		if (! file_exists($sdk_path)) {
+			error_log('fishdan Jsonmaker: Freemius SDK loader not found.');
+			$jm_fs = false;
+
+			return $jm_fs;
+		}
+
+		require_once $sdk_path;
+
+		if (! function_exists('fs_dynamic_init')) {
+			error_log('fishdan Jsonmaker: Freemius SDK failed to initialize.');
+			$jm_fs = false;
+
+			return $jm_fs;
+		}
+
+		$jm_fs = fs_dynamic_init([
+			'id' => '21365',
+			'slug' => 'fishdan-jsonmaker',
+			'type' => 'plugin',
+			'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
+			'is_premium' => false,
+			'has_addons' => false,
+			'has_paid_plans' => false,
+			'menu' => [
+				'first-path' => 'plugins.php',
+				'account' => false,
+				'support' => false,
+			],
+		]);
 
 		return $jm_fs;
 	}
 
+	function jsonmaker_freemius_icon_path() {
+		return plugin_dir_path(__FILE__) . 'vendor/freemius/assets/img/plugin-icon.png';
+	}
+
 	// Initialize the Freemius SDK.
-	jm_fs();
-	// Signal that the SDK finished loading.
-	do_action('jm_fs_loaded');
+	$jm_fs_instance = jm_fs();
+
+	if ($jm_fs_instance) {
+		$jm_fs_instance->add_filter('plugin_icon', 'jsonmaker_freemius_icon_path');
+		// Signal that the SDK finished loading.
+		do_action('jm_fs_loaded');
+	}
 }
 
 final class Jsonmaker_Plugin {
@@ -80,8 +106,8 @@ final class Jsonmaker_Plugin {
 		add_shortcode('jsonmaker', [$this, 'render_shortcode']);
 		add_action('send_headers', [$this, 'maybe_add_cors_headers']);
 		add_filter('redirect_canonical', [$this, 'maybe_disable_canonical_redirect'], 10, 2);
-		add_action('load-admin_page_json-maker', [$this, 'ensure_admin_connect_title'], 5);
-		add_action('load-admin_page_json-maker-network', [$this, 'ensure_admin_connect_title'], 5);
+		add_action('load-admin_page_fishdan-jsonmaker', [$this, 'ensure_admin_connect_title'], 5);
+		add_action('load-admin_page_fishdan-jsonmaker-network', [$this, 'ensure_admin_connect_title'], 5);
 
 		$fs = jm_fs();
 		if (is_object($fs) && method_exists($fs, 'add_filter')) {
@@ -620,7 +646,7 @@ final class Jsonmaker_Plugin {
 			$import_content = (string) ob_get_clean();
 			$import_section = $this->render_collapsible_section(
 				'import',
-				__('Bulk Import JSON', 'jsonmaker'),
+				__('Bulk Import JSON', 'fishdan-jsonmaker'),
 				$import_content,
 				false
 			);
@@ -635,7 +661,7 @@ final class Jsonmaker_Plugin {
 			$json_content = (string) ob_get_clean();
 			$json_section = $this->render_collapsible_section(
 				'json',
-				__('Current JSON', 'jsonmaker'),
+				__('Current JSON', 'fishdan-jsonmaker'),
 				$json_content,
 				false
 			);
@@ -651,7 +677,7 @@ final class Jsonmaker_Plugin {
 		$tree_content = (string) ob_get_clean();
 		$tree_section = $this->render_collapsible_section(
 			'tree',
-			$can_manage ? __('Editing Tree', 'jsonmaker') : __('Link Tree', 'jsonmaker'),
+			$can_manage ? __('Editing Tree', 'fishdan-jsonmaker') : __('Link Tree', 'fishdan-jsonmaker'),
 			$tree_content,
 			true
 		);
@@ -682,9 +708,9 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_action" value="import_json" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
 		$schema_url = plugins_url('jsonmaker.schema.json', __FILE__);
-		$schema_link = '<a href="' . esc_url($schema_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Jsonmaker schema', 'jsonmaker') . '</a>';
+		$schema_link = '<a href="' . esc_url($schema_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('fishdan Jsonmaker schema', 'fishdan-jsonmaker') . '</a>';
 		$description_text = sprintf(
-			__('Paste JSON that matches the %s to replace the tree or append a branch.', 'jsonmaker'),
+			__('Paste JSON that matches the %s to replace the tree or append a branch.', 'fishdan-jsonmaker'),
 			$schema_link
 		);
 
@@ -699,26 +725,26 @@ final class Jsonmaker_Plugin {
 			]
 		) . '</p>';
 		echo '<div class="jsonmaker-import__mode">';
-		echo '<span class="jsonmaker-import__label">' . esc_html__('Mode', 'jsonmaker') . '</span>';
-		echo '<label><input type="radio" name="jsonmaker_import_mode" value="append" checked /> ' . esc_html__('Append under an existing node', 'jsonmaker') . '</label>';
-		echo '<label><input type="radio" name="jsonmaker_import_mode" value="replace" /> ' . esc_html__('Replace entire tree', 'jsonmaker') . '</label>';
+		echo '<span class="jsonmaker-import__label">' . esc_html__('Mode', 'fishdan-jsonmaker') . '</span>';
+		echo '<label><input type="radio" name="jsonmaker_import_mode" value="append" checked /> ' . esc_html__('Append under an existing node', 'fishdan-jsonmaker') . '</label>';
+		echo '<label><input type="radio" name="jsonmaker_import_mode" value="replace" /> ' . esc_html__('Replace entire tree', 'fishdan-jsonmaker') . '</label>';
 		echo '</div>';
 		if (! empty($options)) {
 			echo '<div class="jsonmaker-import__target">';
-			echo '<label for="' . esc_attr($target_id) . '" class="jsonmaker-import__label">' . esc_html__('Append target', 'jsonmaker') . '</label>';
+			echo '<label for="' . esc_attr($target_id) . '" class="jsonmaker-import__label">' . esc_html__('Append target', 'fishdan-jsonmaker') . '</label>';
 			echo '<select id="' . esc_attr($target_id) . '" name="jsonmaker_import_target" data-jsonmaker-import-target required>';
-			echo '<option value="" disabled selected>' . esc_html__('Select a node...', 'jsonmaker') . '</option>';
+			echo '<option value="" disabled selected>' . esc_html__('Select a node...', 'fishdan-jsonmaker') . '</option>';
 			foreach ($options as $option) {
 				echo '<option value="' . esc_attr($option['slug']) . '">' . esc_html($option['label']) . '</option>';
 			}
 			echo '</select>';
-			echo '<p class="jsonmaker-import__hint">' . esc_html__('Used when Mode is set to Append.', 'jsonmaker') . '</p>';
+			echo '<p class="jsonmaker-import__hint">' . esc_html__('Used when Mode is set to Append.', 'fishdan-jsonmaker') . '</p>';
 			echo '</div>';
 		}
-		echo '<label for="' . esc_attr($textarea_id) . '" class="jsonmaker-import__label">' . esc_html__('JSON payload', 'jsonmaker') . '</label>';
+		echo '<label for="' . esc_attr($textarea_id) . '" class="jsonmaker-import__label">' . esc_html__('JSON payload', 'fishdan-jsonmaker') . '</label>';
 		echo '<textarea id="' . esc_attr($textarea_id) . '" name="jsonmaker_payload" rows="10" required></textarea>';
 		echo '<div class="jsonmaker-import__actions">';
-		echo '<button type="submit">' . esc_html__('Import JSON', 'jsonmaker') . '</button>';
+		echo '<button type="submit">' . esc_html__('Import JSON', 'fishdan-jsonmaker') . '</button>';
 		echo '</div>';
 		echo '</form>';
 		echo '</div>';
@@ -793,6 +819,12 @@ final class Jsonmaker_Plugin {
 		if (! is_scalar($value_raw)) {
 			$value_raw = '';
 		}
+		$node_has_value = false;
+		if (array_key_exists('value', $node) && $node['value'] !== '') {
+			$node_has_value = true;
+		} elseif (array_key_exists('url', $node) && $node['url'] !== '') {
+			$node_has_value = true;
+		}
 
 		$has_children = ! empty($node['children']);
 		$slug = isset($node['slug']) ? (string) $node['slug'] : '';
@@ -822,14 +854,15 @@ final class Jsonmaker_Plugin {
 
 		if ($can_manage && $slug !== '') {
 			printf(
-				' <button type="button" class="jsonmaker-add-button" data-jsonmaker-target="%1$s">%2$s</button>',
+				' <button type="button" class="jsonmaker-add-button" data-jsonmaker-target="%1$s"%3$s>%2$s</button>',
 				esc_attr('jsonmaker-form-' . $slug),
-				esc_html__('Add Node', 'jsonmaker')
+				esc_html__('Add Node', 'fishdan-jsonmaker'),
+				$node_has_value ? ' data-jsonmaker-has-value="1"' : ''
 			);
 			printf(
 				' <button type="button" class="jsonmaker-edit-button" data-jsonmaker-target="%1$s">%2$s</button>',
 				esc_attr('jsonmaker-edit-form-' . $slug),
-				esc_html__('Edit', 'jsonmaker')
+				esc_html__('Edit', 'fishdan-jsonmaker')
 			);
 			$this->render_delete_form($slug, $has_children, $current_url);
 		}
@@ -868,14 +901,14 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_parent" value="' . esc_attr($parent_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($current_url) . '" />';
 		echo '<label>';
-		echo esc_html__('Title', 'jsonmaker') . '<br />';
+		echo esc_html__('Title', 'fishdan-jsonmaker') . '<br />';
 		echo '<input type="text" name="jsonmaker_title" required />';
 		echo '</label><br />';
 		echo '<label>';
-		echo esc_html__('Value (leave blank to create a container)', 'jsonmaker') . '<br />';
+		echo esc_html__('Value (leave blank to create a container)', 'fishdan-jsonmaker') . '<br />';
 		echo '<input type="text" name="jsonmaker_value" />';
 		echo '</label><br />';
-		echo '<button type="submit">' . esc_html__('Add Child', 'jsonmaker') . '</button>';
+		echo '<button type="submit">' . esc_html__('Add Child', 'fishdan-jsonmaker') . '</button>';
 		echo '</form>';
 		echo '</div>';
 	}
@@ -895,10 +928,10 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($current_url) . '" />';
 		echo '<label>';
-		echo esc_html__('Title', 'jsonmaker') . '<br />';
+		echo esc_html__('Title', 'fishdan-jsonmaker') . '<br />';
 		echo '<input type="text" name="jsonmaker_title" value="' . esc_attr($current_title) . '" required />';
 		echo '</label><br />';
-		echo '<button type="submit">' . esc_html__('Save Title', 'jsonmaker') . '</button>';
+		echo '<button type="submit">' . esc_html__('Save Title', 'fishdan-jsonmaker') . '</button>';
 		echo '</form>';
 		echo '</div>';
 	}
@@ -915,14 +948,14 @@ final class Jsonmaker_Plugin {
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
 		echo '<button type="submit" class="jsonmaker-delete-button"';
 		if ($has_children) {
-			echo ' data-jsonmaker-has-children="1" data-jsonmaker-message="' . esc_attr__('Remove child nodes before deleting this node.', 'jsonmaker') . '"';
+			echo ' data-jsonmaker-has-children="1" data-jsonmaker-message="' . esc_attr__('Remove child nodes before deleting this node.', 'fishdan-jsonmaker') . '"';
 		}
 		echo '>';
-		echo esc_html__('Delete Node', 'jsonmaker');
+		echo esc_html__('Delete Node', 'fishdan-jsonmaker');
 		echo '</button>';
 		echo '</form>';
 		$api_url = esc_url(home_url('/json/' . rawurlencode($target_slug) . '.json'));
-		echo ' <a class="jsonmaker-view-button" href="' . $api_url . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'jsonmaker') . '</a>';
+		echo ' <a class="jsonmaker-view-button" href="' . $api_url . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
 	}
 
 	private function get_tree(): array {
@@ -958,6 +991,12 @@ final class Jsonmaker_Plugin {
 
 	private function add_child_node(array &$node, string $parent_slug, array $child): bool {
 		if (($node['slug'] ?? '') === $parent_slug) {
+			if (array_key_exists('value', $node)) {
+				unset($node['value']);
+			}
+			if (array_key_exists('url', $node)) {
+				unset($node['url']);
+			}
 			if (! isset($node['children']) || ! is_array($node['children'])) {
 				$node['children'] = [];
 			}
@@ -1130,35 +1169,35 @@ final class Jsonmaker_Plugin {
 	private function get_notice_text(string $code): string {
 		switch ($code) {
 			case 'node_added':
-				return __('Node added.', 'jsonmaker');
+				return __('Node added.', 'fishdan-jsonmaker');
 			case 'node_deleted':
-				return __('Node deleted.', 'jsonmaker');
+				return __('Node deleted.', 'fishdan-jsonmaker');
 			case 'title_updated':
-				return __('Title updated.', 'jsonmaker');
+				return __('Title updated.', 'fishdan-jsonmaker');
 			case 'parent_not_found':
-				return __('Unable to find the parent node.', 'jsonmaker');
+				return __('Unable to find the parent node.', 'fishdan-jsonmaker');
 			case 'missing_fields':
-				return __('Please provide all required fields.', 'jsonmaker');
+				return __('Please provide all required fields.', 'fishdan-jsonmaker');
 			case 'cannot_delete_root':
-				return __('Cannot delete the root node.', 'jsonmaker');
+				return __('Cannot delete the root node.', 'fishdan-jsonmaker');
 			case 'node_not_found':
-				return __('The requested node could not be found.', 'jsonmaker');
+				return __('The requested node could not be found.', 'fishdan-jsonmaker');
 			case 'has_children':
-				return __('Remove child nodes before deleting this node.', 'jsonmaker');
+				return __('Remove child nodes before deleting this node.', 'fishdan-jsonmaker');
 			case 'title_exists':
-				return __('A node with that title already exists. Choose a different title.', 'jsonmaker');
+				return __('A node with that title already exists. Choose a different title.', 'fishdan-jsonmaker');
 			case 'import_success':
-				return __('Tree imported.', 'jsonmaker');
+				return __('Tree imported.', 'fishdan-jsonmaker');
 			case 'import_invalid_json':
-				return __('Unable to parse JSON. Check the syntax and try again.', 'jsonmaker');
+				return __('Unable to parse JSON. Check the syntax and try again.', 'fishdan-jsonmaker');
 			case 'import_invalid_structure':
-				return __('The JSON does not match the expected schema.', 'jsonmaker');
+				return __('The JSON does not match the expected schema.', 'fishdan-jsonmaker');
 			case 'import_duplicate_title':
-				return __('Each node title must be unique. Resolve duplicates and try again.', 'jsonmaker');
+				return __('Each node title must be unique. Resolve duplicates and try again.', 'fishdan-jsonmaker');
 			case 'import_target_missing':
-				return __('Choose a node to append the imported data to.', 'jsonmaker');
+				return __('Choose a node to append the imported data to.', 'fishdan-jsonmaker');
 			case 'import_target_not_found':
-				return __('Unable to find the selected append target.', 'jsonmaker');
+				return __('Unable to find the selected append target.', 'fishdan-jsonmaker');
 			default:
 				return '';
 		}
@@ -1222,7 +1261,8 @@ final class Jsonmaker_Plugin {
 			wp_register_script('jsonmaker-inline', false, [], JSONMAKER_VERSION, true);
 		}
 		wp_enqueue_script('jsonmaker-inline');
-		$confirm_replace = esc_js(__('Confirm you want to erase the entire tree and replace it?', 'jsonmaker'));
+		$confirm_replace = esc_js(__('Confirm you want to erase the entire tree and replace it?', 'fishdan-jsonmaker'));
+		$child_value_warning = esc_js(__('Adding a child to this node will delete its current value, so it becomes a folder and not a link in the bookmark. Continue?', 'fishdan-jsonmaker'));
 		$script_lines = [
 			"const jsonmakerSectionCookiePrefix = 'jsonmaker_section_';",
 			"function jsonmakerSetSectionState(id, isOpen) {",
@@ -1308,6 +1348,7 @@ final class Jsonmaker_Plugin {
 			"\t}",
 			"});",
 			"const jsonmakerConfirmReplace = '" . $confirm_replace . "';",
+			"const jsonmakerAddChildValueWarning = '" . $child_value_warning . "';",
 			"document.addEventListener('click', function (event) {",
 			"\tconst addButton = event.target.closest('.jsonmaker-add-button');",
 			"\tif (addButton) {",
@@ -1315,6 +1356,12 @@ final class Jsonmaker_Plugin {
 			"\t\tconst targetId = addButton.dataset.jsonmakerTarget;",
 			"\t\tif (!targetId) {",
 			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tif (addButton.dataset.jsonmakerHasValue === '1') {",
+			"\t\t\tconst confirmed = window.confirm(jsonmakerAddChildValueWarning);",
+			"\t\t\tif (!confirmed) {",
+			"\t\t\t\treturn;",
+			"\t\t\t}",
 			"\t\t}",
 			"\t\tconst form = document.getElementById(targetId);",
 			"\t\tif (!form) {",
@@ -1446,7 +1493,7 @@ final class Jsonmaker_Plugin {
 		global $title;
 
 		if (! is_string($title) || $title === '') {
-			$title = __('Jsonmaker', 'jsonmaker');
+			$title = __('fishdan Jsonmaker', 'fishdan-jsonmaker');
 		}
 	}
 

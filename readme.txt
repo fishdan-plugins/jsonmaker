@@ -1,9 +1,9 @@
-=== Jsonmaker ===
+=== fishdan Jsonmaker ===
 Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.1.7
+Stable tag: 0.2.0
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -12,7 +12,7 @@ Manage hierarchical link collections via a shortcode, edit them inline, and expo
 
 == Description ==
 
-Jsonmaker lets administrators curate a nested tree of links directly on the front end. Drop the `[jsonmaker]` shortcode onto a page, expand nodes to add children, rename or remove items inline, and fetch any branch at `/json/<slug>.json`.
+fishdan Jsonmaker lets administrators curate a nested tree of links directly on the front end. Drop the `[jsonmaker]` shortcode onto a page, expand nodes to add children, rename or remove items inline, and fetch any branch at `/json/<slug>.json`.
 
 **Highlights**
 
@@ -23,8 +23,8 @@ Jsonmaker lets administrators curate a nested tree of links directly on the fron
 
 == Installation ==
 
-1. Upload the `jsonmaker` folder to `wp-content/plugins/`, or install the ZIP via **Plugins → Add New → Upload Plugin**.
-2. Activate **Jsonmaker** in **Plugins → Installed Plugins**.
+1. Upload the `fishdan-jsonmaker` folder to `wp-content/plugins/`, or install the ZIP via **Plugins → Add New → Upload Plugin**.
+2. Activate **fishdan Jsonmaker** in **Plugins → Installed Plugins**.
 3. Add the `[jsonmaker]` shortcode to a page.
 4. (Optional) Visit **Settings → Permalinks** and click **Save** to refresh rewrite rules if `/json/<slug>.json` returns 404.
 
@@ -43,6 +43,9 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.0 =
+* Renamed the plugin to fishdan Jsonmaker and aligned the text domain, Freemius slug, and packaging directory with the new branding.
 
 = 0.1.7 =
 * Wrapped bulk import, JSON preview, and the editing tree in collapsible sections with remembered state per user.

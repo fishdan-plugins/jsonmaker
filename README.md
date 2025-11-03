@@ -1,11 +1,11 @@
-# Jsonmaker
+# fishdan Jsonmaker
 
 [![WordPress](https://img.shields.io/badge/WordPress-%5E6.0-blue)](https://wordpress.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Hierarchical link trees for WordPress pages: drop in the `[jsonmaker]` shortcode, manage nested URLs inline, and expose any node as live JSON.
+fishdan Jsonmaker provides hierarchical link trees for WordPress pages: drop in the `[jsonmaker]` shortcode, manage nested URLs inline, and expose any node as live JSON.
 
-[![Watch the Jsonmaker walkthrough on Loom](https://cdn.loom.com/sessions/thumbnails/7d4b76327b22488985f079cb27f70f2c-78c9589b2983a335-full-play.gif)](https://www.loom.com/share/7d4b76327b22488985f079cb27f70f2c?sid=3b2665fb-bd60-43b2-8a18-dc4989b0a67f).
+[![Watch the fishdan Jsonmaker walkthrough on Loom](https://cdn.loom.com/sessions/thumbnails/7d4b76327b22488985f079cb27f70f2c-78c9589b2983a335-full-play.gif)](https://www.loom.com/share/7d4b76327b22488985f079cb27f70f2c?sid=3b2665fb-bd60-43b2-8a18-dc4989b0a67f).
 
 ---
 
@@ -21,8 +21,8 @@ Hierarchical link trees for WordPress pages: drop in the `[jsonmaker]` shortcode
 
 ## 📦 Installation
 
-1. Copy the `jsonmaker` folder into your WordPress `wp-content/plugins` directory, or upload the ZIP via **Plugins → Add New → Upload Plugin**.
-2. Activate **Jsonmaker** under **Plugins → Installed Plugins**.
+1. Copy the `fishdan-jsonmaker` folder into your WordPress `wp-content/plugins` directory, or upload the ZIP via **Plugins → Add New → Upload Plugin**.
+2. Activate **fishdan Jsonmaker** under **Plugins → Installed Plugins**.
 3. (Optional) Visit **Settings → Permalinks** and click **Save** to flush rewrite rules if `/json/<slug>.json` 404s.
 
 ---

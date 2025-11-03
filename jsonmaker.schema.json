@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jsonmaker.local/jsonmaker.schema.json",
-  "title": "Jsonmaker Node",
-  "description": "Schema for the hierarchical JSON payloads emitted by the Jsonmaker WordPress plugin.",
+  "title": "fishdan Jsonmaker Node",
+  "description": "Schema for the hierarchical JSON payloads emitted by the fishdan Jsonmaker WordPress plugin.",
   "$ref": "#/$defs/node",
   "$defs": {
     "node": {
       "type": "object",
-      "description": "A node in the Jsonmaker tree.",
+      "description": "A node in the fishdan Jsonmaker tree.",
       "properties": {
         "title": {
           "type": "string",
@@ -43,7 +43,7 @@
               "title": "Projects",
               "children": [
                 {
-                  "title": "Jsonmaker",
+                  "title": "fishdan Jsonmaker",
                   "value": "https://www.fishdan.com/jsonmaker"
                 }
               ]
