@@ -3,7 +3,7 @@
  * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.2.1
+ * Version: 0.2.2
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.2.1');
+	define('JSONMAKER_VERSION', '0.2.2');
 }
 
 if (! function_exists('jm_fs')) {
@@ -83,7 +83,9 @@ if (! function_exists('jm_fs')) {
 
 final class Jsonmaker_Plugin {
 	private const OPTION_NAME = 'jsonmaker_tree';
+	private const USER_META_KEY = 'jsonmaker_tree';
 	private const CAPABILITY = 'jsonmaker_manage';
+	private const ROLE_NAME = 'json';
 
 	private static ?Jsonmaker_Plugin $instance = null;
 	private bool $printed_assets = false;
@@ -114,6 +116,7 @@ final class Jsonmaker_Plugin {
 	}
 
 	public static function activate(): void {
+		self::ensure_role();
 		self::ensure_capability();
 		self::ensure_initial_tree();
 		self::instance()->register_rewrite();
@@ -126,6 +129,10 @@ final class Jsonmaker_Plugin {
 
 	public static function uninstall(): void {
 		delete_option(self::OPTION_NAME);
+
+		if (function_exists('remove_role')) {
+			remove_role(self::ROLE_NAME);
+		}
 
 		if (! function_exists('wp_roles') || ! class_exists('WP_Roles')) {
 			return;
@@ -148,34 +155,105 @@ final class Jsonmaker_Plugin {
 			return;
 		}
 
-		$initial = [
-			'title' => 'Fishdan',
-			'slug' => 'fishdan',
-			'value' => 'https://www.fishdan.com',
-			'children' => [],
-		];
+		$initial = self::get_default_tree_template_static();
 
 		add_option(self::OPTION_NAME, $initial);
 	}
 
-	private static function ensure_capability(): void {
-		$role = get_role('administrator');
-
-		if ($role === null) {
+	private static function ensure_role(): void {
+		if (! function_exists('add_role')) {
 			return;
 		}
 
-		if (! $role->has_cap(self::CAPABILITY)) {
+		$role = get_role(self::ROLE_NAME);
+
+		if ($role === null) {
+			$role = add_role(
+				self::ROLE_NAME,
+				__('JSON User', 'fishdan-jsonmaker'),
+				[
+					'read' => true,
+				]
+			);
+		}
+
+		if ($role instanceof WP_Role && ! $role->has_cap(self::CAPABILITY)) {
 			$role->add_cap(self::CAPABILITY);
 		}
 	}
 
+	private static function get_default_tree_template_static(): array {
+		return [
+			'title' => 'Popular',
+			'slug' => 'popular',
+			'children' => [
+				[
+					'title' => 'Google',
+					'slug' => 'google',
+					'value' => 'https://www.google.com',
+					'children' => [],
+				],
+				[
+					'title' => 'YouTube',
+					'slug' => 'youtube',
+					'value' => 'https://www.youtube.com',
+					'children' => [],
+				],
+				[
+					'title' => 'Facebook',
+					'slug' => 'facebook',
+					'value' => 'https://www.facebook.com',
+					'children' => [],
+				],
+				[
+					'title' => 'Amazon',
+					'slug' => 'amazon',
+					'value' => 'https://www.amazon.com',
+					'children' => [],
+				],
+				[
+					'title' => 'Reddit',
+					'slug' => 'reddit',
+					'value' => 'https://www.reddit.com',
+					'children' => [],
+				],
+				[
+					'title' => 'Yahoo',
+					'slug' => 'yahoo',
+					'value' => 'https://www.yahoo.com',
+					'children' => [],
+				],
+			],
+		];
+	}
+
+	private static function ensure_capability(): void {
+		if (! function_exists('get_role')) {
+			return;
+		}
+
+		$role_names = ['administrator', self::ROLE_NAME];
+
+		foreach ($role_names as $role_name) {
+			$role = get_role($role_name);
+
+			if ($role === null) {
+				continue;
+			}
+
+			if (! $role->has_cap(self::CAPABILITY)) {
+				$role->add_cap(self::CAPABILITY);
+			}
+		}
+	}
+
 	public function register_rewrite(): void {
-		add_rewrite_rule('^json/([^/]+)\.json$', 'index.php?jsonmaker_node=$matches[1]', 'top');
+		add_rewrite_rule('^json/([^/]+)/([^/]+)\.json$', 'index.php?jsonmaker_user=$matches[1]&jsonmaker_node=$matches[2]', 'top');
 	}
 
 	public function register_query_var(array $vars): array {
 		$vars[] = 'jsonmaker_node';
+		$vars[] = 'jsonmaker_user';
 
 		return $vars;
 	}
@@ -185,6 +263,12 @@ final class Jsonmaker_Plugin {
 		$action = is_string($action_raw) ? sanitize_key(wp_unslash($action_raw)) : '';
 
 		if ($action === '') {
+			return;
+		}
+
+		if ($action === 'register_json_user') {
+			$this->handle_register_submission();
+
 			return;
 		}
 
@@ -227,7 +311,13 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('missing_fields');
 		}
 
-		$tree = $this->get_tree();
+		$user_id = get_current_user_id();
+
+		if ($user_id === 0) {
+			return;
+		}
+
+		$tree = $this->get_tree($user_id);
 
 		if ($this->title_exists($tree, $title)) {
 			$this->redirect_with_message('title_exists');
@@ -247,7 +337,7 @@ final class Jsonmaker_Plugin {
 		$updated = $this->add_child_node($tree, $parent_slug, $new_node);
 
 		if ($updated) {
-			update_option(self::OPTION_NAME, $tree);
+			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('node_added', true);
 		}
 
@@ -269,7 +359,13 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('missing_fields');
 		}
 
-		$tree = $this->get_tree();
+		$user_id = get_current_user_id();
+
+		if ($user_id === 0) {
+			return;
+		}
+
+		$tree = $this->get_tree($user_id);
 
 		if (($tree['slug'] ?? '') === $target_slug) {
 			$this->redirect_with_message('cannot_delete_root');
@@ -288,7 +384,7 @@ final class Jsonmaker_Plugin {
 		$deleted = $this->remove_node($tree, $target_slug);
 
 		if ($deleted) {
-			update_option(self::OPTION_NAME, $tree);
+			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('node_deleted', true);
 		}
 
@@ -313,7 +409,13 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('missing_fields');
 		}
 
-		$tree = $this->get_tree();
+		$user_id = get_current_user_id();
+
+		if ($user_id === 0) {
+			return;
+		}
+
+		$tree = $this->get_tree($user_id);
 
 		if ($this->title_exists($tree, $new_title, $target_slug)) {
 			$this->redirect_with_message('title_exists');
@@ -324,7 +426,7 @@ final class Jsonmaker_Plugin {
 		$updated = $this->update_node_title($tree, $target_slug, $new_title, $new_slug);
 
 		if ($updated) {
-			update_option(self::OPTION_NAME, $tree);
+			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('title_updated', true);
 		}
 
@@ -367,6 +469,12 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('missing_fields');
 		}
 
+		$user_id = get_current_user_id();
+
+		if ($user_id === 0) {
+			return;
+		}
+
 		$decoded = json_decode($payload, true);
 
 		if (! is_array($decoded)) {
@@ -381,11 +489,11 @@ final class Jsonmaker_Plugin {
 				$this->redirect_with_message($error_code !== '' ? $error_code : 'import_invalid_structure');
 			}
 
-			update_option(self::OPTION_NAME, $tree);
+			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('import_success', true);
 		}
 
-		$current_tree = $this->get_tree();
+		$current_tree = $this->get_tree($user_id);
 		$node = $this->normalize_import_tree($decoded, $error_code, $current_tree);
 
 		if ($node === null || $error_code !== '') {
@@ -396,8 +504,67 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('import_target_not_found');
 		}
 
-		update_option(self::OPTION_NAME, $current_tree);
+		$this->save_tree($current_tree, $user_id);
 		$this->redirect_with_message('import_success', true);
+	}
+
+	private function handle_register_submission(): void {
+		if (is_user_logged_in()) {
+			return;
+		}
+
+		check_admin_referer('jsonmaker_register_user', 'jsonmaker_register_nonce');
+
+		$username_raw = filter_input(INPUT_POST, 'jsonmaker_username', FILTER_UNSAFE_RAW);
+		$email_raw = filter_input(INPUT_POST, 'jsonmaker_email', FILTER_UNSAFE_RAW);
+		$password_raw = filter_input(INPUT_POST, 'jsonmaker_password', FILTER_UNSAFE_RAW);
+
+		if (! is_string($username_raw) || ! is_string($email_raw) || ! is_string($password_raw)) {
+			$this->redirect_with_message('register_missing_fields');
+		}
+
+		$username = sanitize_user(wp_unslash($username_raw), true);
+		$email = sanitize_email(wp_unslash($email_raw));
+		$password = (string) wp_unslash($password_raw);
+
+		if ($username === '' || $email === '' || trim($password) === '') {
+			$this->redirect_with_message('register_missing_fields');
+		}
+
+		if (! is_email($email)) {
+			$this->redirect_with_message('register_invalid_email');
+		}
+
+		if (username_exists($username)) {
+			$this->redirect_with_message('register_username_exists');
+		}
+
+		if (email_exists($email)) {
+			$this->redirect_with_message('register_email_exists');
+		}
+
+		self::ensure_role();
+
+		$user_id = wp_create_user($username, $password, $email);
+
+		if (is_wp_error($user_id)) {
+			$this->redirect_with_message('register_failed');
+		}
+
+		wp_update_user([
+			'ID' => $user_id,
+			'role' => self::ROLE_NAME,
+		]);
+
+		$user = get_user_by('id', $user_id);
+
+		if ($user instanceof WP_User) {
+			wp_set_current_user($user_id, $user->user_login);
+			wp_set_auth_cookie($user_id);
+			do_action('wp_login', $user->user_login, $user);
+		}
+
+		$this->redirect_with_message('register_success', true);
 	}
 
 	private function normalize_import_tree(array $root, string &$error_code, ?array $existing_tree = null): ?array {
@@ -572,10 +739,36 @@ final class Jsonmaker_Plugin {
 		return is_string($fallback) ? $fallback : '';
 	}
 
-	public function maybe_output_json(): void {
-		$requested = get_query_var('jsonmaker_node');
+	private function resolve_user_from_path(string $value): ?WP_User {
+		$decoded = rawurldecode($value);
+		$decoded = trim($decoded);
 
-		if ($requested === '') {
+		if ($decoded === '') {
+			return null;
+		}
+
+		$user = get_user_by('login', $decoded);
+
+		if ($user instanceof WP_User) {
+			return $user;
+		}
+
+		$sanitized = sanitize_title($decoded);
+
+		if ($sanitized === '') {
+			return null;
+		}
+
+		$user = get_user_by('slug', $sanitized);
+
+		return $user instanceof WP_User ? $user : null;
+	}
+
+	public function maybe_output_json(): void {
+		$requested_node = get_query_var('jsonmaker_node');
+		$requested_user = get_query_var('jsonmaker_user');
+
+		if ($requested_node === '' || $requested_user === '') {
 			return;
 		}
 
@@ -589,13 +782,21 @@ final class Jsonmaker_Plugin {
 			exit;
 		}
 
-		$normalized_slug = $this->normalize_request_slug($requested);
+		$normalized_slug = $this->normalize_request_slug($requested_node);
 		if ($normalized_slug === '') {
 			status_header(404);
 			wp_send_json(['error' => 'Node not found'], 404);
 		}
 
-		$node = $this->find_node($this->get_tree(), $normalized_slug);
+		$user = $this->resolve_user_from_path($requested_user);
+
+		if (! $user instanceof WP_User) {
+			status_header(404);
+			wp_send_json(['error' => 'User not found'], 404);
+		}
+
+		$tree = $this->get_tree((int) $user->ID);
+		$node = $this->find_node($tree, $normalized_slug);
 
 		if ($node === null) {
 			status_header(404);
@@ -606,11 +807,7 @@ final class Jsonmaker_Plugin {
 	}
 
 	public function render_shortcode(): string {
-		$tree = $this->get_tree();
 		$this->maybe_print_assets();
-
-		$can_manage = current_user_can(self::CAPABILITY);
-		$current_url = $can_manage ? $this->get_current_url() : '';
 
 		$notice_code = '';
 		$notice_status = 'error';
@@ -628,8 +825,17 @@ final class Jsonmaker_Plugin {
 			}
 		}
 
+		if (! is_user_logged_in()) {
+			return $this->render_login_register_prompt($notice_code, $notice_status);
+		}
+
+		$tree = $this->get_tree();
+		$can_manage = current_user_can(self::CAPABILITY);
+		$current_url = $this->get_current_url();
+
 		ob_start();
-		if ($notice_code !== '' && $can_manage) {
+		echo '<div class="jsonmaker-wrapper container-fluid px-0">';
+		if ($notice_code !== '') {
 			$message_text = $this->get_notice_text($notice_code);
 
 			if ($message_text !== '') {
@@ -638,6 +844,27 @@ final class Jsonmaker_Plugin {
 			}
 		}
 		$sections = [];
+		$user = wp_get_current_user();
+		$username_key = '';
+		if ($user instanceof WP_User && $user->user_login !== '') {
+			$username_key = (string) $user->user_login;
+		} else {
+			$username_key = 'user-' . get_current_user_id();
+		}
+
+		$instructions = $this->render_usage_instructions(true, $username_key);
+		if ($instructions !== '') {
+			$instructions_section = $this->render_collapsible_section(
+				'instructions',
+				__('Getting Started', 'fishdan-jsonmaker'),
+				$instructions,
+				true
+			);
+			if ($instructions_section !== '') {
+				$sections[] = $instructions_section;
+			}
+		}
+
 		if ($can_manage) {
 			ob_start();
 			$this->render_import_form($current_url, $tree);
@@ -653,8 +880,11 @@ final class Jsonmaker_Plugin {
 			}
 
 			ob_start();
+			$json_payload = [
+				$username_key => $this->prepare_public_node($tree),
+			];
 			echo '<pre class="jsonmaker-json">';
-			echo esc_html(wp_json_encode($this->prepare_public_node($tree), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+			echo esc_html(wp_json_encode($json_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 			echo '</pre>';
 			$json_content = (string) ob_get_clean();
 			$json_section = $this->render_collapsible_section(
@@ -688,6 +918,8 @@ final class Jsonmaker_Plugin {
 			echo $section_html;
 		}
 
+		echo '</div>';
+
 		return (string) ob_get_clean();
 	}
 
@@ -702,7 +934,7 @@ final class Jsonmaker_Plugin {
 		$this->build_import_target_options($tree, $options);
 
 		echo '<div class="jsonmaker-import">';
-		echo '<form method="post" action="' . esc_url($redirect) . '">';
+		echo '<form method="post" action="' . esc_url($redirect) . '" class="row g-3">';
 		wp_nonce_field('jsonmaker_import', 'jsonmaker_import_nonce');
 		echo '<input type="hidden" name="jsonmaker_action" value="import_json" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
@@ -714,7 +946,8 @@ final class Jsonmaker_Plugin {
 			$schema_link
 		);
 
-		echo '<p class="jsonmaker-import__intro">' . wp_kses(
+		echo '<div class="col-12">';
+		echo '<p class="jsonmaker-import__intro text-muted small mb-2">' . wp_kses(
 			$description_text,
 			[
 				'a' => [
@@ -724,30 +957,151 @@ final class Jsonmaker_Plugin {
 				],
 			]
 		) . '</p>';
-		echo '<div class="jsonmaker-import__mode">';
-		echo '<span class="jsonmaker-import__label">' . esc_html__('Mode', 'fishdan-jsonmaker') . '</span>';
-		echo '<label><input type="radio" name="jsonmaker_import_mode" value="append" checked /> ' . esc_html__('Append under an existing node', 'fishdan-jsonmaker') . '</label>';
-		echo '<label><input type="radio" name="jsonmaker_import_mode" value="replace" /> ' . esc_html__('Replace entire tree', 'fishdan-jsonmaker') . '</label>';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<span class="form-label d-block">' . esc_html__('Mode', 'fishdan-jsonmaker') . '</span>';
+		echo '<div class="form-check">';
+		echo '<input class="form-check-input" type="radio" name="jsonmaker_import_mode" value="append" id="jsonmaker-import-mode-append" checked />';
+		echo '<label class="form-check-label" for="jsonmaker-import-mode-append">' . esc_html__('Append under an existing node', 'fishdan-jsonmaker') . '</label>';
+		echo '</div>';
+		echo '<div class="form-check">';
+		echo '<input class="form-check-input" type="radio" name="jsonmaker_import_mode" value="replace" id="jsonmaker-import-mode-replace" />';
+		echo '<label class="form-check-label" for="jsonmaker-import-mode-replace">' . esc_html__('Replace entire tree', 'fishdan-jsonmaker') . '</label>';
+		echo '</div>';
 		echo '</div>';
 		if (! empty($options)) {
-			echo '<div class="jsonmaker-import__target">';
-			echo '<label for="' . esc_attr($target_id) . '" class="jsonmaker-import__label">' . esc_html__('Append target', 'fishdan-jsonmaker') . '</label>';
-			echo '<select id="' . esc_attr($target_id) . '" name="jsonmaker_import_target" data-jsonmaker-import-target required>';
+			echo '<div class="col-12 col-md-6">';
+			echo '<label for="' . esc_attr($target_id) . '" class="form-label">' . esc_html__('Append target', 'fishdan-jsonmaker') . '</label>';
+			echo '<select id="' . esc_attr($target_id) . '" class="form-select" name="jsonmaker_import_target" data-jsonmaker-import-target required>';
 			echo '<option value="" disabled selected>' . esc_html__('Select a node...', 'fishdan-jsonmaker') . '</option>';
 			foreach ($options as $option) {
 				echo '<option value="' . esc_attr($option['slug']) . '">' . esc_html($option['label']) . '</option>';
 			}
 			echo '</select>';
-			echo '<p class="jsonmaker-import__hint">' . esc_html__('Used when Mode is set to Append.', 'fishdan-jsonmaker') . '</p>';
+			echo '<div class="jsonmaker-import__hint form-text">' . esc_html__('Used when Mode is set to Append.', 'fishdan-jsonmaker') . '</div>';
 			echo '</div>';
 		}
-		echo '<label for="' . esc_attr($textarea_id) . '" class="jsonmaker-import__label">' . esc_html__('JSON payload', 'fishdan-jsonmaker') . '</label>';
-		echo '<textarea id="' . esc_attr($textarea_id) . '" name="jsonmaker_payload" rows="10" required></textarea>';
-		echo '<div class="jsonmaker-import__actions">';
-		echo '<button type="submit">' . esc_html__('Import JSON', 'fishdan-jsonmaker') . '</button>';
+		echo '<div class="col-12">';
+		echo '<label for="' . esc_attr($textarea_id) . '" class="form-label">' . esc_html__('JSON payload', 'fishdan-jsonmaker') . '</label>';
+		echo '<textarea id="' . esc_attr($textarea_id) . '" class="form-control" name="jsonmaker_payload" rows="10" required></textarea>';
+		echo '</div>';
+		echo '<div class="col-12 d-flex gap-2">';
+		echo '<button type="submit" class="btn btn-primary">' . esc_html__('Import JSON', 'fishdan-jsonmaker') . '</button>';
 		echo '</div>';
 		echo '</form>';
 		echo '</div>';
+	}
+
+	private function render_login_register_prompt(string $notice_code, string $notice_status): string {
+		$current_url = $this->get_current_url();
+		$login_url = wp_login_url($current_url);
+
+		$login_link = '<a href="' . esc_url($login_url) . '">' . esc_html__('log in', 'fishdan-jsonmaker') . '</a>';
+
+		ob_start();
+		echo '<div class="jsonmaker-wrapper container-fluid px-0">';
+		echo '<div class="jsonmaker-auth card shadow-sm border-0">';
+		echo '<div class="card-body p-4">';
+		if ($notice_code !== '') {
+			$message_text = $this->get_notice_text($notice_code);
+			if ($message_text !== '') {
+				$class = $notice_status === 'success' ? 'jsonmaker-notice--success' : 'jsonmaker-notice--error';
+				echo '<div class="jsonmaker-notice ' . esc_attr($class) . '">' . esc_html($message_text) . '</div>';
+			}
+		}
+
+		echo '<p class="mb-3">' . wp_kses_post(sprintf(
+			/* translators: %s is a link prompting the visitor to log in. */
+			__('Please %s to manage your JSON tree, or create a new account below.', 'fishdan-jsonmaker'),
+			$login_link
+		)) . '</p>';
+
+		$instructions = $this->render_usage_instructions(false);
+		if ($instructions !== '') {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_usage_instructions() returns escaped markup.
+			echo $instructions;
+		}
+
+		echo '<form method="post" action="' . esc_url($current_url) . '" class="jsonmaker-register-form row g-3 mt-3">';
+		wp_nonce_field('jsonmaker_register_user', 'jsonmaker_register_nonce');
+		echo '<input type="hidden" name="jsonmaker_action" value="register_json_user" />';
+		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($current_url) . '" />';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="jsonmaker-register-username">' . esc_html__('Username', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="text" id="jsonmaker-register-username" class="form-control" name="jsonmaker_username" autocomplete="username" required />';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="jsonmaker-register-email">' . esc_html__('Email address', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="email" id="jsonmaker-register-email" class="form-control" name="jsonmaker_email" autocomplete="email" required />';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="jsonmaker-register-password">' . esc_html__('Password', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="password" id="jsonmaker-register-password" class="form-control" name="jsonmaker_password" autocomplete="new-password" required />';
+		echo '</div>';
+		echo '<div class="col-12 d-flex flex-column align-items-start gap-2">';
+		echo '<p class="text-muted small mb-0">' . esc_html__('New accounts use the JSON role so you can curate your own data immediately.', 'fishdan-jsonmaker') . '</p>';
+		echo '<button type="submit" class="btn btn-primary">' . esc_html__('Create account', 'fishdan-jsonmaker') . '</button>';
+		echo '</div>';
+		echo '</form>';
+		echo '</div>';
+		echo '</div>';
+		echo '</div>';
+
+		return (string) ob_get_clean();
+	}
+
+	private function render_usage_instructions(bool $logged_in, string $username_key = ''): string {
+		$extension_url = 'https://chromewebstore.google.com/detail/hdailbkmbdcililnbemepacdkfdkbhco?utm_source=item-share-cb';
+		$extension_link = '<a href="' . esc_url($extension_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Subscribed Toolbar Chrome extension', 'fishdan-jsonmaker') . '</a>';
+		$example_url = '';
+
+		if ($logged_in && $username_key !== '') {
+			$example_url = home_url('/json/' . rawurlencode($username_key) . '/popular.json');
+		}
+
+		$example_link = $example_url !== '' ? '<a href="' . esc_url($example_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($example_url) . '</a>' : '';
+
+		ob_start();
+		echo '<div class="jsonmaker-instructions">';
+
+		if ($logged_in) {
+			echo '<p class="mb-3">' . esc_html__('Build a living library of links that instantly publishes as JSON feeds tied to your account.', 'fishdan-jsonmaker') . '</p>';
+			echo '<ul class="list-group list-group-flush mb-3">';
+			echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Use the Add, Edit, and Delete controls to organise links into folders and subfolders right on the page.', 'fishdan-jsonmaker') . '</li>';
+			if ($example_url !== '') {
+				echo '<li class="list-group-item px-0 bg-transparent">' . wp_kses_post(sprintf(
+					/* translators: %s is an example JSON URL. */
+					__('Every branch becomes a personalized endpoint such as %s — notice your username baked into the path.', 'fishdan-jsonmaker'),
+					'<code>' . $example_link . '</code>'
+				)) . '</li>';
+			} else {
+				echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Every branch publishes to /json/<your-username>/<node>.json so the URLs are unique to you.', 'fishdan-jsonmaker') . '</li>';
+			}
+			echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Share the JSON from any level with teammates, embed it in dashboards, or automate against it — every node is portable.', 'fishdan-jsonmaker') . '</li>';
+			echo '<li class="list-group-item px-0 bg-transparent">' . wp_kses_post(sprintf(
+				/* translators: %s is a link to the Chrome extension. */
+				__('Add the feed to the %s to surface your curated links inside <b>ANY</b> browser toolbar.', 'fishdan-jsonmaker'),
+				$extension_link
+			)) . '</li>';
+			echo '</ul>';
+			echo '<p class="small text-muted mb-0">' . esc_html__('Keep iterating on the tree whenever inspiration strikes — updates are reflected everywhere the JSON is consumed.', 'fishdan-jsonmaker') . '</p>';
+		} else {
+			echo '<p class="mb-3">' . esc_html__('Register to start building a shareable JSON library of the links you rely on most.', 'fishdan-jsonmaker') . '</p>';
+			echo '<ul class="list-group list-group-flush mb-3">';
+			echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Your menu begins with a curated “Popular” folder that you can expand and reshape instantly.', 'fishdan-jsonmaker') . '</li>';
+			echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Every JSON URL is personalised with your username, so you control exactly what you share and with whom.', 'fishdan-jsonmaker') . '</li>';
+			echo '<li class="list-group-item px-0 bg-transparent">' . esc_html__('Send any branch to friends or teammates — they receive the live JSON feed of that portion of your library.', 'fishdan-jsonmaker') . '</li>';
+			echo '<li class="list-group-item px-0 bg-transparent">' . wp_kses_post(sprintf(
+				/* translators: %s is a link to the Chrome extension. */
+				__('Hook it into the %s to keep those links pinned to your toolbar with zero extra effort.', 'fishdan-jsonmaker'),
+				$extension_link
+			)) . '</li>';
+			echo '</ul>';
+		}
+
+		echo '</div>';
+
+		return (string) ob_get_clean();
 	}
 
 	private function render_collapsible_section(string $id, string $title, string $content, bool $default_open = true): string {
@@ -767,15 +1121,16 @@ final class Jsonmaker_Plugin {
 		$default_attr = $default_open ? 'open' : 'closed';
 		$aria_expanded = $default_open ? 'true' : 'false';
 
-		$output = '<div class="jsonmaker-section" data-jsonmaker-section="' . esc_attr($section_key) . '" data-jsonmaker-section-default="' . esc_attr($default_attr) . '">';
-		$output .= '<div class="jsonmaker-section__header">';
+		$output = '<div class="jsonmaker-section card shadow-sm border-0" data-jsonmaker-section="' . esc_attr($section_key) . '" data-jsonmaker-section-default="' . esc_attr($default_attr) . '">';
+		$output .= '<div class="jsonmaker-section__header card-header bg-light">';
 		$indicator_symbol = $default_open ? '−' : '+';
-		$output .= '<button type="button" id="' . esc_attr($toggle_id) . '" class="jsonmaker-section__toggle" data-jsonmaker-section-toggle="' . esc_attr($section_key) . '" aria-controls="' . esc_attr($content_id) . '" aria-expanded="' . esc_attr($aria_expanded) . '">';
-		$output .= '<span class="jsonmaker-section__indicator" data-jsonmaker-section-indicator aria-hidden="true">' . esc_html($indicator_symbol) . '</span>';
-		$output .= '<span class="jsonmaker-section__title"><strong>' . esc_html($title) . '</strong></span>';
+		$output .= '<button type="button" id="' . esc_attr($toggle_id) . '" class="jsonmaker-section__toggle btn btn-link text-decoration-none w-100 d-flex align-items-center gap-3" data-jsonmaker-section-toggle="' . esc_attr($section_key) . '" aria-controls="' . esc_attr($content_id) . '" aria-expanded="' . esc_attr($aria_expanded) . '">';
+		$output .= '<span class="jsonmaker-section__indicator badge rounded-pill bg-primary-subtle text-primary-emphasis" data-jsonmaker-section-indicator aria-hidden="true">' . esc_html($indicator_symbol) . '</span>';
+		$output .= '<span class="jsonmaker-section__title fw-semibold">' . esc_html($title) . '</span>';
+		$output .= '<span class="flex-grow-1"></span>';
 		$output .= '</button>';
 		$output .= '</div>';
-		$output .= '<div id="' . esc_attr($content_id) . '" class="jsonmaker-section__content">';
+		$output .= '<div id="' . esc_attr($content_id) . '" class="jsonmaker-section__content card-body">';
 		$output .= $content;
 		$output .= '</div>';
 		$output .= '</div>';
@@ -854,13 +1209,13 @@ final class Jsonmaker_Plugin {
 
 		if ($can_manage && $slug !== '') {
 			printf(
-				' <button type="button" class="jsonmaker-add-button" data-jsonmaker-target="%1$s"%3$s>%2$s</button>',
+				' <button type="button" class="btn btn-sm btn-outline-primary jsonmaker-add-button ms-1" data-jsonmaker-target="%1$s"%3$s>%2$s</button>',
 				esc_attr('jsonmaker-form-' . $slug),
 				esc_html__('Add Node', 'fishdan-jsonmaker'),
 				$node_has_value ? ' data-jsonmaker-has-value="1"' : ''
 			);
 			printf(
-				' <button type="button" class="jsonmaker-edit-button" data-jsonmaker-target="%1$s">%2$s</button>',
+				' <button type="button" class="btn btn-sm btn-outline-secondary jsonmaker-edit-button ms-1" data-jsonmaker-target="%1$s">%2$s</button>',
 				esc_attr('jsonmaker-edit-form-' . $slug),
 				esc_html__('Edit', 'fishdan-jsonmaker')
 			);
@@ -891,24 +1246,30 @@ final class Jsonmaker_Plugin {
 		}
 
 		$form_id = 'jsonmaker-form-' . $parent_slug;
+		$title_field_id = 'jsonmaker-title-' . $parent_slug;
+		$value_field_id = 'jsonmaker-value-' . $parent_slug;
 
 		$current_url = $redirect ?? $this->get_current_url();
 
-		echo '<div id="' . esc_attr($form_id) . '" class="jsonmaker-add-form" hidden>';
-		echo '<form method="post" action="' . esc_url($current_url) . '">';
+		echo '<div id="' . esc_attr($form_id) . '" class="jsonmaker-add-form mt-3" hidden>';
+		echo '<form method="post" action="' . esc_url($current_url) . '" class="card border-0 shadow-sm">';
+		echo '<div class="card-body row g-3">';
 		wp_nonce_field('jsonmaker_add_node', 'jsonmaker_nonce');
 		echo '<input type="hidden" name="jsonmaker_action" value="add_node" />';
 		echo '<input type="hidden" name="jsonmaker_parent" value="' . esc_attr($parent_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($current_url) . '" />';
-		echo '<label>';
-		echo esc_html__('Title', 'fishdan-jsonmaker') . '<br />';
-		echo '<input type="text" name="jsonmaker_title" required />';
-		echo '</label><br />';
-		echo '<label>';
-		echo esc_html__('Value (leave blank to create a container)', 'fishdan-jsonmaker') . '<br />';
-		echo '<input type="text" name="jsonmaker_value" />';
-		echo '</label><br />';
-		echo '<button type="submit">' . esc_html__('Add Child', 'fishdan-jsonmaker') . '</button>';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="' . esc_attr($title_field_id) . '">' . esc_html__('Title', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="text" id="' . esc_attr($title_field_id) . '" class="form-control form-control-sm" name="jsonmaker_title" required />';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="' . esc_attr($value_field_id) . '">' . esc_html__('Value (leave blank to create a container)', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="text" id="' . esc_attr($value_field_id) . '" class="form-control form-control-sm" name="jsonmaker_value" />';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<button type="submit" class="btn btn-primary btn-sm">' . esc_html__('Add Child', 'fishdan-jsonmaker') . '</button>';
+		echo '</div>';
+		echo '</div>';
 		echo '</form>';
 		echo '</div>';
 	}
@@ -919,19 +1280,24 @@ final class Jsonmaker_Plugin {
 		}
 
 		$form_id = 'jsonmaker-edit-form-' . $target_slug;
+		$title_field_id = 'jsonmaker-edit-title-' . $target_slug;
 		$current_url = $redirect ?? $this->get_current_url();
 
-		echo '<div id="' . esc_attr($form_id) . '" class="jsonmaker-edit-form" hidden>';
-		echo '<form method="post" action="' . esc_url($current_url) . '">';
+		echo '<div id="' . esc_attr($form_id) . '" class="jsonmaker-edit-form mt-3" hidden>';
+		echo '<form method="post" action="' . esc_url($current_url) . '" class="card border-0 shadow-sm">';
+		echo '<div class="card-body row g-3">';
 		wp_nonce_field('jsonmaker_edit_node', 'jsonmaker_edit_nonce');
 		echo '<input type="hidden" name="jsonmaker_action" value="edit_node" />';
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($current_url) . '" />';
-		echo '<label>';
-		echo esc_html__('Title', 'fishdan-jsonmaker') . '<br />';
-		echo '<input type="text" name="jsonmaker_title" value="' . esc_attr($current_title) . '" required />';
-		echo '</label><br />';
-		echo '<button type="submit">' . esc_html__('Save Title', 'fishdan-jsonmaker') . '</button>';
+		echo '<div class="col-12">';
+		echo '<label class="form-label" for="' . esc_attr($title_field_id) . '">' . esc_html__('Title', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="text" id="' . esc_attr($title_field_id) . '" class="form-control form-control-sm" name="jsonmaker_title" value="' . esc_attr($current_title) . '" required />';
+		echo '</div>';
+		echo '<div class="col-12">';
+		echo '<button type="submit" class="btn btn-primary btn-sm">' . esc_html__('Save Title', 'fishdan-jsonmaker') . '</button>';
+		echo '</div>';
+		echo '</div>';
 		echo '</form>';
 		echo '</div>';
 	}
@@ -941,12 +1307,12 @@ final class Jsonmaker_Plugin {
 			return;
 		}
 
-		echo '<form method="post" action="' . esc_url($redirect) . '" class="jsonmaker-delete-form">';
+		echo ' <form method="post" action="' . esc_url($redirect) . '" class="jsonmaker-delete-form d-inline-flex align-items-center">';
 		wp_nonce_field('jsonmaker_delete_node', 'jsonmaker_delete_nonce', false);
 		echo '<input type="hidden" name="jsonmaker_action" value="delete_node" />';
 		echo '<input type="hidden" name="jsonmaker_target" value="' . esc_attr($target_slug) . '" />';
 		echo '<input type="hidden" name="jsonmaker_redirect" value="' . esc_attr($redirect) . '" />';
-		echo '<button type="submit" class="jsonmaker-delete-button"';
+		echo '<button type="submit" class="btn btn-sm btn-outline-danger jsonmaker-delete-button ms-1"';
 		if ($has_children) {
 			echo ' data-jsonmaker-has-children="1" data-jsonmaker-message="' . esc_attr__('Remove child nodes before deleting this node.', 'fishdan-jsonmaker') . '"';
 		}
@@ -954,19 +1320,51 @@ final class Jsonmaker_Plugin {
 		echo esc_html__('Delete Node', 'fishdan-jsonmaker');
 		echo '</button>';
 		echo '</form>';
-		$api_url = home_url('/json/' . rawurlencode($target_slug) . '.json');
-		echo ' <a class="jsonmaker-view-button" href="' . esc_url($api_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
+		$current_user = wp_get_current_user();
+		$username = $current_user instanceof WP_User ? (string) $current_user->user_login : '';
+		$path = $username !== '' ? '/json/' . rawurlencode($username) . '/' . rawurlencode($target_slug) . '.json' : '/json/' . rawurlencode($target_slug) . '.json';
+		$api_url = home_url($path);
+		echo ' <a class="btn btn-sm btn-outline-info ms-1 jsonmaker-view-button" href="' . esc_url($api_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
 	}
 
-	private function get_tree(): array {
-		$tree = get_option(self::OPTION_NAME);
-
-		if (! is_array($tree)) {
-			self::ensure_initial_tree();
-			$tree = get_option(self::OPTION_NAME);
+	private function get_tree(?int $user_id = null): array {
+		if ($user_id === null) {
+			$user_id = get_current_user_id();
 		}
 
+		if ($user_id > 0) {
+			$tree = get_user_meta($user_id, self::USER_META_KEY, true);
+
+			if (! is_array($tree) || empty($tree)) {
+				$tree = $this->create_initial_tree_for_user($user_id);
+				$this->save_tree($tree, $user_id);
+			}
+
+			return is_array($tree) ? $tree : [];
+		}
+
+		self::ensure_initial_tree();
+		$tree = get_option(self::OPTION_NAME);
+
 		return is_array($tree) ? $tree : [];
+	}
+
+	private function save_tree(array $tree, ?int $user_id = null): void {
+		if ($user_id === null) {
+			$user_id = get_current_user_id();
+		}
+
+		if ($user_id > 0) {
+			update_user_meta($user_id, self::USER_META_KEY, $tree);
+
+			return;
+		}
+
+		update_option(self::OPTION_NAME, $tree);
+	}
+
+	private function create_initial_tree_for_user(int $user_id): array {
+		return self::get_default_tree_template_static();
 	}
 
 	private function find_node(array $node, string $slug): ?array {
@@ -1198,6 +1596,18 @@ final class Jsonmaker_Plugin {
 				return __('Choose a node to append the imported data to.', 'fishdan-jsonmaker');
 			case 'import_target_not_found':
 				return __('Unable to find the selected append target.', 'fishdan-jsonmaker');
+			case 'register_missing_fields':
+				return __('Please complete all registration fields.', 'fishdan-jsonmaker');
+			case 'register_invalid_email':
+				return __('Enter a valid email address.', 'fishdan-jsonmaker');
+			case 'register_username_exists':
+				return __('That username is already taken. Choose a different one.', 'fishdan-jsonmaker');
+			case 'register_email_exists':
+				return __('An account with that email already exists.', 'fishdan-jsonmaker');
+			case 'register_failed':
+				return __('We could not create your account. Try again later.', 'fishdan-jsonmaker');
+			case 'register_success':
+				return __('Account created. You are now signed in.', 'fishdan-jsonmaker');
 			default:
 				return '';
 		}
@@ -1210,50 +1620,47 @@ final class Jsonmaker_Plugin {
 
 		$this->printed_assets = true;
 
+		wp_enqueue_style(
+			'jsonmaker-bootstrap-css',
+			'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
+			[],
+			'5.3.3'
+		);
+		wp_enqueue_script(
+			'jsonmaker-bootstrap-js',
+			'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
+			[],
+			'5.3.3',
+			true
+		);
+
 		if (! wp_style_is('jsonmaker-inline', 'registered')) {
 			wp_register_style('jsonmaker-inline', false, [], JSONMAKER_VERSION);
 		}
 		wp_enqueue_style('jsonmaker-inline');
 		$style_lines = [
-			'.jsonmaker-json {font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:1rem; border:1px solid #ddd; overflow:auto;}',
-			'.jsonmaker-tree {font-family: Arial, sans-serif;}',
-			'.jsonmaker-node {border-left:2px solid #ddd; margin-left:1rem; padding-left:1rem; margin-top:0.5rem;}',
-			'.jsonmaker-node__title {display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;}',
-			'.jsonmaker-node__label {font-weight:600;}',
-			'.jsonmaker-node__value {font-family:Menlo, Consolas, monospace;}',
-			'.jsonmaker-node__title a {text-decoration:none;}',
-			'.jsonmaker-add-button,',
-			'.jsonmaker-edit-button,',
-			'.jsonmaker-delete-button,',
-			'.jsonmaker-view-button {font-size:0.8rem; padding:0.1rem 0.4rem; cursor:pointer; display:inline-block; text-decoration:none; background:#f8f9fa; border:1px solid #cbd5e0; border-radius:3px; color:#1a202c;}',
-			'.jsonmaker-delete-form {display:inline; margin:0;}',
-			'.jsonmaker-delete-button {margin-left:0.25rem;}',
-			'.jsonmaker-view-button {margin-left:0.25rem;}',
-			'.jsonmaker-section {border:1px solid #d9d9d9; border-radius:6px; background:#fff; margin-bottom:1rem; box-shadow:0 1px 2px rgba(16,24,40,0.04);}',
-			'.jsonmaker-section__header {background:#f3f4f6; padding:0.6rem 0.9rem; border-bottom:1px solid #d9d9d9;}',
-			'.jsonmaker-section__toggle {display:flex; align-items:center; justify-content:flex-start; gap:0.5rem; width:100%; background:none; border:0; padding:0; font-size:1rem; cursor:pointer; color:#1a202c;}',
-			'.jsonmaker-section__toggle:focus {outline:2px solid #3182ce; outline-offset:2px;}',
-			'.jsonmaker-section__title {display:flex; align-items:center; gap:0.5rem;}',
-			'.jsonmaker-section__indicator {font-size:1.25rem; line-height:1; margin-right:0.25rem; width:1.25rem; text-align:center; transition:color 0.2s ease-in-out;}',
-			'.jsonmaker-section__content {padding:0.9rem;}',
-			'.jsonmaker-import {margin-bottom:1rem;}',
-			'.jsonmaker-import form {background:#f9f9f9; border:1px solid #ccc; padding:0.75rem;}',
-			'.jsonmaker-import__intro {margin-top:0; margin-bottom:0.75rem;}',
-			'.jsonmaker-import__label {display:block; font-weight:600; margin-bottom:0.25rem;}',
-			'.jsonmaker-import__mode {display:flex; flex-direction:column; gap:0.25rem; margin-bottom:0.5rem;}',
-			'.jsonmaker-import__mode label {font-weight:400;}',
-			'.jsonmaker-import__target {margin-bottom:0.75rem;}',
-			'.jsonmaker-import select {width:100%; max-width:20rem;}',
-			'.jsonmaker-import__hint {margin:0.25rem 0 0; font-size:0.85rem; color:#555;}',
-			'.jsonmaker-import textarea {width:100%; font-family: Menlo, Consolas, monospace; min-height:10rem;}',
-			'.jsonmaker-import__actions {margin-top:0.5rem;}',
-			'.jsonmaker-add-form,',
-			'.jsonmaker-edit-form {margin-top:0.5rem;}',
-			'.jsonmaker-add-form form,',
-			'.jsonmaker-edit-form form {background:#f9f9f9; border:1px solid #ccc; padding:0.5rem;}',
-			'.jsonmaker-notice {margin-bottom:1rem; padding:0.75rem 1rem; border-radius:4px; border:1px solid transparent; font-weight:600;}',
-			'.jsonmaker-notice--success {background:#f0fff4; border-color:#38a169; color:#276749;}',
-			'.jsonmaker-notice--error {background:#fff5f5; border-color:#e53e3e; color:#9b2c2c;}',
+			'.jsonmaker-wrapper {font-family: var(--bs-body-font-family);}',
+			'.jsonmaker-json {font-family: var(--bs-font-monospace); background: var(--bs-light); padding: 1rem; border: 1px solid var(--bs-border-color); border-radius: 0.5rem; overflow:auto;}',
+			'.jsonmaker-node {border-left: 3px solid rgba(13,110,253,.35); margin-left: 1rem; padding-left: 1rem; margin-top: 0.75rem;}',
+			'.jsonmaker-node__title {display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;}',
+			'.jsonmaker-node__label {font-weight: 600;}',
+			'.jsonmaker-node__value {font-family: var(--bs-font-monospace);}',
+			'.jsonmaker-node__title a {text-decoration: none;}',
+			'.jsonmaker-node__children {margin-top: 0.5rem;}',
+			'.jsonmaker-tree .btn {min-width: 6.5rem;}',
+			'.jsonmaker-delete-form {display: inline-flex; margin: 0;}',
+			'.jsonmaker-section {margin-bottom: 1rem;}',
+			'.jsonmaker-section__header {padding: 0;}',
+			'.jsonmaker-section__toggle {display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; padding: 0.75rem 1rem; font-size: 1rem; cursor: pointer; color: inherit;}',
+			'.jsonmaker-section__indicator {font-size: 1.25rem; line-height: 1; width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center;}',
+			'.jsonmaker-section__content {padding: 1rem;}',
+			'.jsonmaker-import textarea {font-family: var(--bs-font-monospace); min-height: 10rem;}',
+			'.jsonmaker-import__hint {font-size: 0.85rem;}',
+			'.jsonmaker-notice {margin-bottom: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid transparent; font-weight: 600;}',
+			'.jsonmaker-notice--success {background: #d1e7dd; border-color: #badbcc; color: #0f5132;}',
+			'.jsonmaker-notice--error {background: #f8d7da; border-color: #f5c2c7; color: #842029;}',
+			'.jsonmaker-instructions ul {padding-left: 1rem;}',
+			'.jsonmaker-auth {max-width: 36rem;}',
 		];
 		wp_add_inline_style('jsonmaker-inline', implode("\n", $style_lines));
 
@@ -1454,25 +1861,34 @@ final class Jsonmaker_Plugin {
 	}
 
 	public function maybe_add_cors_headers(): void {
-		$requested = get_query_var('jsonmaker_node');
-		if ($requested === '') {
-			$raw = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
-			if (! is_string($raw) || $raw === '') {
-				return;
-			}
+		$query_node = get_query_var('jsonmaker_node');
+		$query_user = get_query_var('jsonmaker_user');
+
+		if ($query_node !== '' && $query_user !== '') {
+			$this->send_cors_headers();
+
+			return;
 		}
 
-		$this->send_cors_headers();
+		$raw_node = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
+		$raw_user = filter_input(INPUT_GET, 'jsonmaker_user', FILTER_UNSAFE_RAW);
+
+		if (is_string($raw_node) && $raw_node !== '' && is_string($raw_user) && $raw_user !== '') {
+			$this->send_cors_headers();
+		}
 	}
 
 	public function maybe_disable_canonical_redirect($redirect_url, $requested_url) {
-		$requested = get_query_var('jsonmaker_node');
-		if ($requested !== '') {
+		$requested_node = get_query_var('jsonmaker_node');
+		$requested_user = get_query_var('jsonmaker_user');
+
+		if ($requested_node !== '' && $requested_user !== '') {
 			return false;
 		}
 
-		$raw = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
-		if (is_string($raw) && $raw !== '') {
+		$raw_node = filter_input(INPUT_GET, 'jsonmaker_node', FILTER_UNSAFE_RAW);
+		$raw_user = filter_input(INPUT_GET, 'jsonmaker_user', FILTER_UNSAFE_RAW);
+		if (is_string($raw_node) && $raw_node !== '' && is_string($raw_user) && $raw_user !== '') {
 			return false;
 		}
 
