@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.2
+Stable tag: 0.2.2.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,9 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.2.1 =
+* Bulk import now accepts copies of the “Current JSON” output (e.g., `{ "username": { ... } }`) and unwraps the username wrapper automatically.
 
 = 0.2.2 =
 * Introduced per-user JSON trees with personalised `/json/<username>/<node>.json` endpoints and a dedicated JSON role plus registration flow.

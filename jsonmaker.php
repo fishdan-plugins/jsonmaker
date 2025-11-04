@@ -3,7 +3,7 @@
  * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.2.2
+ * Version: 0.2.2.1
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.2.2');
+	define('JSONMAKER_VERSION', '0.2.2.1');
 }
 
 if (! function_exists('jm_fs')) {
@@ -481,6 +481,8 @@ final class Jsonmaker_Plugin {
 			$this->redirect_with_message('import_invalid_json');
 		}
 
+		$decoded = $this->maybe_unwrap_user_payload($decoded);
+
 		$error_code = '';
 		if ($mode === 'replace') {
 			$tree = $this->normalize_import_tree($decoded, $error_code);
@@ -706,6 +708,32 @@ final class Jsonmaker_Plugin {
 		}
 
 		return $node;
+	}
+
+	private function maybe_unwrap_user_payload(array $payload): array {
+		$keys = array_keys($payload);
+
+		if (count($keys) !== 1) {
+			return $payload;
+		}
+
+		$first_key = $keys[0];
+
+		if (! is_string($first_key)) {
+			return $payload;
+		}
+
+		$first_value = $payload[$first_key];
+
+		if (! is_array($first_value)) {
+			return $payload;
+		}
+
+		if (! array_key_exists('title', $first_value) && ! array_key_exists('children', $first_value)) {
+			return $payload;
+		}
+
+		return $first_value;
 	}
 
 	private function normalize_title_key(string $title): string {
