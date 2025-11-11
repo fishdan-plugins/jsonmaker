@@ -43,7 +43,7 @@ fishdan Jsonmaker provides hierarchical link trees for WordPress pages: drop in 
 - **Capability tweaks** – hook into activation or `map_meta_cap` to grant `jsonmaker_manage` to additional roles.
 - **Data shape** – node arrays include `title`, `slug`, optional `value`, and optional `children` arrays.
 - **Customization** – override the inline styles by dequeuing them and enqueuing a custom stylesheet if desired.
-- **Freemius SDK** – access the telemetry/licensing SDK via the `jm_fs()` helper if you need to hook into its events.
+- **Freemius SDK** – access the telemetry/licensing SDK via the `jsonmaker_fs()` helper if you need to hook into its events.
 
 ---
 
