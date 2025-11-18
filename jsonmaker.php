@@ -3,7 +3,7 @@
  * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.2.3
+ * Version: 0.2.4
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.2.3');
+	define('JSONMAKER_VERSION', '0.2.4');
 }
 
 if (! function_exists('jsonmaker_fs')) {
@@ -79,7 +79,7 @@ if (! function_exists('jsonmaker_fs')) {
 		$jsonmaker_fs_instance->add_filter('plugin_icon', 'jsonmaker_freemius_icon_path');
 		// Signal that the SDK finished loading.
 		do_action('jsonmaker_fs_loaded');
-		do_action_deprecated('jm_fs_loaded', [], '0.2.3', 'jsonmaker_fs_loaded');
+		do_action_deprecated('jm_fs_loaded', [], '0.2.4', 'jsonmaker_fs_loaded');
 	}
 }
 
@@ -1046,8 +1046,6 @@ final class Jsonmaker_Plugin {
 		$current_url = $this->get_current_url();
 		$login_url = wp_login_url($current_url);
 
-		$login_link = '<a href="' . esc_url($login_url) . '">' . esc_html__('log in', 'fishdan-jsonmaker') . '</a>';
-
 		ob_start();
 		echo '<div class="jsonmaker-wrapper container-fluid px-0">';
 		echo '<div class="jsonmaker-auth card shadow-sm border-0">';
@@ -1060,11 +1058,10 @@ final class Jsonmaker_Plugin {
 			}
 		}
 
-		echo '<p class="mb-3">' . wp_kses_post(sprintf(
-			/* translators: %s is a link prompting the visitor to log in. */
-			__('Please %s to manage your JSON tree, or create a new account below.', 'fishdan-jsonmaker'),
-			$login_link
-		)) . '</p>';
+		echo '<div class="jsonmaker-auth__cta d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3 mb-4">';
+		echo '<p class="mb-0">' . esc_html__('Already have an account? Jump back into your JSON tree using the login button. Need one? Register below.', 'fishdan-jsonmaker') . '</p>';
+		echo '<a class="btn btn-outline-primary btn-lg" href="' . esc_url($login_url) . '">' . esc_html__('Log in to your account', 'fishdan-jsonmaker') . '</a>';
+		echo '</div>';
 
 		$instructions = $this->render_usage_instructions(false);
 		if ($instructions !== '') {
@@ -1600,7 +1597,12 @@ final class Jsonmaker_Plugin {
 		}
 
 		if ($redirect === '') {
-			$redirect = wp_get_referer() ?: home_url();
+			$redirect = wp_get_referer() ?: '';
+		}
+
+		if ($redirect === '') {
+			$current_url = $this->get_current_url();
+			$redirect = $current_url !== '' ? $current_url : home_url();
 		}
 
 		if ($code !== '') {

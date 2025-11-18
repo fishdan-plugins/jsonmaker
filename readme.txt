@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.3
+Stable tag: 0.2.4
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,10 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.4 =
+* Added a prominent login call-to-action so returning users can access their trees without hunting for the WordPress screen.
+* Ensured successful registrations redirect back to the `[jsonmaker]` page instead of dropping users on the default dashboard.
 
 = 0.2.3 =
 * Enabled Freemius org-compliance mode, renamed helper APIs, and documented the change.
