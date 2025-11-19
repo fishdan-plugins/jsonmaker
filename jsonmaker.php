@@ -22,65 +22,50 @@ if (! defined('JSONMAKER_VERSION')) {
 	define('JSONMAKER_VERSION', '0.2.4');
 }
 
-if (! function_exists('jsonmaker_fs')) {
+if (! function_exists('jm_fs')) {
 	/**
 	 * Provide a helper for accessing the Freemius SDK instance.
 	 */
-	function jsonmaker_fs() {
-		global $jsonmaker_fs;
+	function jm_fs() {
+		global $jm_fs;
 
-		if (isset($jsonmaker_fs)) {
-			return $jsonmaker_fs;
+		if (! isset($jm_fs)) {
+			require_once dirname(__FILE__) . '/vendor/freemius/start.php';
+
+			$jm_fs = fs_dynamic_init([
+				'id' => '21365',
+				'slug' => 'json-maker',
+				'type' => 'plugin',
+				'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
+				'is_premium' => true,
+				'premium_suffix' => 'Basic',
+				'has_premium_version' => true,
+				'has_addons' => false,
+				'has_paid_plans' => true,
+				'wp_org_gatekeeper' => 'OA7#BoRiBNqdf52FvzEf!!074aRLPs8fspif$7K1#4u4Csys1fQlCecVcUTOs2mcpeVHi#C2j9d09fOTvbC0HloPT7fFee5WdS3G',
+				'menu' => [
+					'first-path' => 'plugins.php',
+					'support' => false,
+				],
+			]);
 		}
 
-		$sdk_path = __DIR__ . '/vendor/freemius/start.php';
-
-		if (! file_exists($sdk_path)) {
-			$jsonmaker_fs = false;
-
-			return $jsonmaker_fs;
-		}
-
-		require_once $sdk_path;
-
-		if (! function_exists('fs_dynamic_init')) {
-			$jsonmaker_fs = false;
-
-			return $jsonmaker_fs;
-		}
-
-		$jsonmaker_fs = fs_dynamic_init([
-			'id' => '21365',
-			'slug' => 'fishdan-jsonmaker',
-			'type' => 'plugin',
-			'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
-			'is_premium' => false,
-			'has_addons' => false,
-			'has_paid_plans' => false,
-			'is_org_compliant' => true,
-			'menu' => [
-				'first-path' => 'plugins.php',
-				'account' => false,
-				'support' => false,
-			],
-		]);
-
-		return $jsonmaker_fs;
+		return $jm_fs;
 	}
 
-	function jsonmaker_freemius_icon_path() {
-		return plugin_dir_path(__FILE__) . 'vendor/freemius/assets/img/plugin-icon.png';
-	}
+	// Init Freemius.
+	jm_fs();
+	// Signal that SDK was initiated.
+	do_action('jm_fs_loaded');
+}
 
-	// Initialize the Freemius SDK.
-	$jsonmaker_fs_instance = jsonmaker_fs();
+function jsonmaker_freemius_icon_path() {
+	return plugin_dir_path(__FILE__) . 'vendor/freemius/assets/img/plugin-icon.png';
+}
 
-	if ($jsonmaker_fs_instance) {
-		$jsonmaker_fs_instance->add_filter('plugin_icon', 'jsonmaker_freemius_icon_path');
-		// Signal that the SDK finished loading.
-		do_action('jsonmaker_fs_loaded');
-		do_action_deprecated('jm_fs_loaded', [], '0.2.4', 'jsonmaker_fs_loaded');
-	}
+$jm_fs_instance = jm_fs();
+if ($jm_fs_instance) {
+	$jm_fs_instance->add_filter('plugin_icon', 'jsonmaker_freemius_icon_path');
 }
 
 final class Jsonmaker_Plugin {
@@ -88,6 +73,8 @@ final class Jsonmaker_Plugin {
 	private const USER_META_KEY = 'jsonmaker_tree';
 	private const CAPABILITY = 'jsonmaker_manage';
 	private const ROLE_NAME = 'json';
+	private const FREE_PLAN_ID = 35655;
+	private const PAID_PLAN_ID = 36439;
 
 	private static ?Jsonmaker_Plugin $instance = null;
 	private bool $printed_assets = false;
@@ -108,12 +95,15 @@ final class Jsonmaker_Plugin {
 		add_filter('query_vars', [$this, 'register_query_var']);
 		add_action('template_redirect', [$this, 'maybe_output_json']);
 		add_shortcode('jsonmaker', [$this, 'render_shortcode']);
+		add_shortcode('jsonmaker_checkout', [$this, 'render_checkout_shortcode']);
 		add_action('send_headers', [$this, 'maybe_add_cors_headers']);
 		add_filter('redirect_canonical', [$this, 'maybe_disable_canonical_redirect'], 10, 2);
 		add_action('load-admin_page_fishdan-jsonmaker', [$this, 'ensure_admin_connect_title'], 5);
 		add_action('load-admin_page_fishdan-jsonmaker-network', [$this, 'ensure_admin_connect_title'], 5);
+		add_action('admin_menu', [$this, 'register_admin_menu']);
+		add_action('network_admin_menu', [$this, 'register_network_admin_menu']);
 
-		$fs = jsonmaker_fs();
+		$fs = jm_fs();
 		if (is_object($fs) && method_exists($fs, 'add_filter')) {
 			$fs->add_filter('plugin_icon', [$this, 'filter_freemius_plugin_icon']);
 		}
@@ -255,6 +245,37 @@ final class Jsonmaker_Plugin {
 		add_rewrite_rule('^json/([^/]+)/([^/]+)\.json$', 'index.php?jsonmaker_user=$matches[1]&jsonmaker_node=$matches[2]', 'top');
 	}
 
+	public function register_admin_menu(): void {
+		$this->add_plugin_admin_page();
+	}
+
+	public function register_network_admin_menu(): void {
+		if (! is_multisite()) {
+			return;
+		}
+
+		$this->add_plugin_admin_page();
+	}
+
+	private function add_plugin_admin_page(): void {
+		$page_title = __('fishdan Jsonmaker', 'fishdan-jsonmaker');
+		$menu_title = __('Jsonmaker', 'fishdan-jsonmaker');
+		$capability = self::CAPABILITY;
+		$menu_slug = 'fishdan-jsonmaker';
+		$icon = 'dashicons-networking';
+		$position = 58;
+
+		add_menu_page(
+			$page_title,
+			$menu_title,
+			$capability,
+			$menu_slug,
+			[$this, 'render_admin_page'],
+			$icon,
+			$position
+		);
+	}
+
 	public function register_query_var(array $vars): array {
 		$vars[] = 'jsonmaker_node';
 		$vars[] = 'jsonmaker_user';
@@ -346,6 +367,7 @@ final class Jsonmaker_Plugin {
 		$updated = $this->add_child_node($tree, $parent_slug, $new_node);
 
 		if ($updated) {
+			$this->maybe_ensure_about_links($tree);
 			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('node_added', true);
 		}
@@ -396,6 +418,7 @@ final class Jsonmaker_Plugin {
 		$deleted = $this->remove_node($tree, $target_slug);
 
 		if ($deleted) {
+			$this->maybe_ensure_about_links($tree);
 			$this->save_tree($tree, $user_id);
 			$this->redirect_with_message('node_deleted', true);
 		}
@@ -915,6 +938,19 @@ final class Jsonmaker_Plugin {
 			}
 		}
 
+		$checkout_panel = $this->render_checkout_panel();
+		if ($checkout_panel !== '') {
+			$checkout_section = $this->render_collapsible_section(
+				'checkout',
+				__('Upgrade with Freemius Checkout', 'fishdan-jsonmaker'),
+				$checkout_panel,
+				true
+			);
+			if ($checkout_section !== '') {
+				$sections[] = $checkout_section;
+			}
+		}
+
 		if ($can_manage) {
 			ob_start();
 			$this->render_import_form($current_url, $tree);
@@ -971,6 +1007,82 @@ final class Jsonmaker_Plugin {
 		echo '</div>';
 
 		return (string) ob_get_clean();
+	}
+
+	public function render_checkout_shortcode(array $atts): string {
+		$defaults = [
+			'plan_id' => '',
+			'licenses' => '1',
+			'label' => __('Get Jsonmaker Basic', 'fishdan-jsonmaker'),
+			'mode' => 'button',
+			'height' => '780',
+			'class' => '',
+			'button_class' => 'btn btn-primary btn-lg',
+		];
+		$atts = shortcode_atts($defaults, $atts, 'jsonmaker_checkout');
+
+		$plan_id = is_numeric($atts['plan_id']) ? (int) $atts['plan_id'] : 0;
+		if ($plan_id <= 0) {
+			$configured_plan_id = $this->get_configured_plan_id();
+			if ($configured_plan_id > 0) {
+				$plan_id = $configured_plan_id;
+			}
+		}
+		$licenses = is_numeric($atts['licenses']) ? max(1, (int) $atts['licenses']) : 1;
+		$label = trim($atts['label']) !== '' ? $atts['label'] : $defaults['label'];
+		$mode = strtolower((string) $atts['mode']) === 'iframe' ? 'iframe' : 'button';
+		$class_attr = trim($atts['class']);
+		$button_class = trim($atts['button_class']) !== '' ? $atts['button_class'] : $defaults['button_class'];
+
+		$checkout_url = $this->build_freemius_checkout_url($plan_id, $licenses);
+
+		if ($checkout_url === '') {
+			return '';
+		}
+
+		if ($mode === 'iframe') {
+			$height = $this->sanitize_css_dimension($atts['height'], '780px');
+			$container_classes = 'jsonmaker-checkout-embed';
+			if ($class_attr !== '') {
+				$container_classes .= ' ' . $class_attr;
+			}
+
+			return sprintf(
+				'<div class="%1$s"><iframe src="%2$s" title="%3$s" loading="lazy" style="width:100%%;min-height:%4$s;border:0;" allowtransparency="true"></iframe><p class="jsonmaker-checkout-embed__fallback"><a href="%2$s" target="_blank" rel="noopener noreferrer">%5$s</a></p></div>',
+				esc_attr($container_classes),
+				esc_url($checkout_url),
+				esc_attr__('Jsonmaker checkout', 'fishdan-jsonmaker'),
+				esc_attr($height),
+				esc_html__('Open checkout in a new tab', 'fishdan-jsonmaker')
+			);
+		}
+
+		$button_classes = 'jsonmaker-checkout-button ' . $button_class;
+		if ($class_attr !== '') {
+			$button_classes .= ' ' . $class_attr;
+		}
+
+		return sprintf(
+			'<a class="%1$s" href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a>',
+			esc_attr(trim($button_classes)),
+			esc_url($checkout_url),
+			esc_html($label)
+		);
+	}
+
+	public function render_admin_page(): void {
+		if (! current_user_can(self::CAPABILITY)) {
+			wp_die(esc_html__('You do not have permission to access this page.', 'fishdan-jsonmaker'));
+		}
+
+		global $title;
+		$title = __('fishdan Jsonmaker', 'fishdan-jsonmaker');
+
+		echo '<div class="wrap jsonmaker-admin">';
+		echo '<h1>' . esc_html__('fishdan Jsonmaker', 'fishdan-jsonmaker') . '</h1>';
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_shortcode() escapes its markup.
+		echo $this->render_shortcode();
+		echo '</div>';
 	}
 
 	private function render_import_form(string $redirect, array $tree): void {
@@ -1146,6 +1258,36 @@ final class Jsonmaker_Plugin {
 			echo '</ul>';
 		}
 
+			echo '</div>';
+
+			return (string) ob_get_clean();
+		}
+
+	private function render_checkout_panel(): string {
+		$plan_id = $this->get_configured_plan_id();
+		$shortcode_html = $this->render_checkout_shortcode([
+			'plan_id' => $plan_id > 0 ? (string) $plan_id : '',
+			'mode' => 'iframe',
+			'height' => '860px',
+			'label' => __('Secure Checkout', 'fishdan-jsonmaker'),
+		]);
+
+		if ($shortcode_html === '') {
+			return '<div class="jsonmaker-checkout-panel card border-0 shadow-sm"><div class="card-body"><p class="text-muted mb-0">' .
+				esc_html__('Set a Freemius plan ID via the jsonmaker_checkout shortcode, the JSONMAKER_CHECKOUT_PLAN_ID constant, or the jsonmaker_checkout_plan_id option to enable checkout.', 'fishdan-jsonmaker') .
+				'</p></div></div>';
+		}
+
+		ob_start();
+		echo '<div class="jsonmaker-checkout-panel card border-0 shadow-sm">';
+		echo '<div class="card-body">';
+		echo '<p class="text-muted">' . esc_html__(
+			'Purchase Jsonmaker Basic through the Freemius checkout to unlock premium features instantly.',
+			'fishdan-jsonmaker'
+		) . '</p>';
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_checkout_shortcode() returns escaped markup.
+		echo $shortcode_html;
+		echo '</div>';
 		echo '</div>';
 
 		return (string) ob_get_clean();
@@ -1232,10 +1374,23 @@ final class Jsonmaker_Plugin {
 		$slug = isset($node['slug']) ? (string) $node['slug'] : '';
 		$can_manage = current_user_can(self::CAPABILITY);
 		$current_url = $can_manage ? $this->get_current_url() : '';
+		$node_classes = ['jsonmaker-node'];
+		if ($has_children) {
+			$node_classes[] = 'jsonmaker-node--has-children';
+		}
+		$node_attrs = '';
+		if ($has_children && $slug !== '') {
+			$node_attrs = ' data-jsonmaker-node="' . esc_attr($slug) . '"';
+		}
 
-		echo '<div class="jsonmaker-node">';
+		echo '<div class="' . esc_attr(implode(' ', $node_classes)) . '"' . $node_attrs . '>';
 
 		echo '<div class="jsonmaker-node__title">';
+		if ($has_children) {
+			echo $this->render_node_toggle_button($slug);
+		} else {
+			echo '<span class="jsonmaker-node-toggle-placeholder"></span>';
+		}
 		printf('<span class="jsonmaker-node__label">%s</span>', esc_html($title_raw));
 
 		if ($value_raw !== '') {
@@ -1254,24 +1409,39 @@ final class Jsonmaker_Plugin {
 			}
 		}
 
+		$actions_html = '';
+		ob_start();
 		if ($can_manage && $slug !== '') {
 			printf(
-				' <button type="button" class="btn btn-sm btn-outline-primary jsonmaker-add-button ms-1" data-jsonmaker-target="%1$s"%3$s>%2$s</button>',
+				'<button type="button" class="btn btn-sm btn-outline-primary jsonmaker-add-button" data-jsonmaker-target="%1$s"%3$s>%2$s</button>',
 				esc_attr('jsonmaker-form-' . $slug),
 				esc_html__('Add Node', 'fishdan-jsonmaker'),
 				$node_has_value ? ' data-jsonmaker-has-value="1"' : ''
 			);
 			printf(
-				' <button type="button" class="btn btn-sm btn-outline-secondary jsonmaker-edit-button ms-1" data-jsonmaker-target="%1$s">%2$s</button>',
+				' <button type="button" class="btn btn-sm btn-outline-secondary jsonmaker-edit-button" data-jsonmaker-target="%1$s">%2$s</button>',
 				esc_attr('jsonmaker-edit-form-' . $slug),
 				esc_html__('Edit', 'fishdan-jsonmaker')
 			);
 			$this->render_delete_form($slug, $has_children, $current_url);
 		}
+		$actions_html = (string) ob_get_clean();
+
+		$view_button_html = $this->render_view_node_button($slug);
+
+		echo '<span class="jsonmaker-node__actions d-inline-flex flex-wrap align-items-center gap-2">';
+		echo $actions_html;
+		echo $view_button_html;
+		echo '</span>';
+
 		echo '</div>';
 
 		if ($has_children) {
-			echo '<div class="jsonmaker-node__children">';
+			$children_attrs = 'class="jsonmaker-node__children"';
+			if ($slug !== '') {
+				$children_attrs .= ' data-jsonmaker-node-children hidden';
+			}
+			echo '<div ' . $children_attrs . '>';
 			foreach ($node['children'] as $child) {
 				$this->render_node($child);
 			}
@@ -1285,6 +1455,36 @@ final class Jsonmaker_Plugin {
 		}
 
 		echo '</div>';
+	}
+
+	private function render_view_node_button(string $slug): string {
+		if ($slug === '') {
+			return '';
+		}
+
+		$current_user = wp_get_current_user();
+		$username = $current_user instanceof WP_User ? (string) $current_user->user_login : '';
+		$path = $username !== '' ? '/json/' . rawurlencode($username) . '/' . rawurlencode($slug) . '.json' : '/json/' . rawurlencode($slug) . '.json';
+		$api_url = home_url($path);
+
+		return ' <a class="btn btn-sm btn-outline-info jsonmaker-view-button" href="' . esc_url($api_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
+	}
+
+	private function render_node_toggle_button(string $slug): string {
+		if ($slug === '') {
+			return '';
+		}
+
+		$open_label = '+';
+		$close_label = '−';
+
+		return sprintf(
+			' <button type="button" class="jsonmaker-node-toggle" data-jsonmaker-node-toggle data-jsonmaker-label-open="%1$s" data-jsonmaker-label-close="%2$s" aria-expanded="false" aria-label="%4$s">%3$s</button>',
+			esc_attr($open_label),
+			esc_attr($close_label),
+			esc_html($open_label),
+			esc_attr__('Toggle folder', 'fishdan-jsonmaker')
+		);
 	}
 
 	private function render_add_form(string $parent_slug, ?string $redirect = null): void {
@@ -1367,11 +1567,6 @@ final class Jsonmaker_Plugin {
 		echo esc_html__('Delete Node', 'fishdan-jsonmaker');
 		echo '</button>';
 		echo '</form>';
-		$current_user = wp_get_current_user();
-		$username = $current_user instanceof WP_User ? (string) $current_user->user_login : '';
-		$path = $username !== '' ? '/json/' . rawurlencode($username) . '/' . rawurlencode($target_slug) . '.json' : '/json/' . rawurlencode($target_slug) . '.json';
-		$api_url = home_url($path);
-		echo ' <a class="btn btn-sm btn-outline-info ms-1 jsonmaker-view-button" href="' . esc_url($api_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View Node', 'fishdan-jsonmaker') . '</a>';
 	}
 
 	private function get_tree(?int $user_id = null): array {
@@ -1482,6 +1677,111 @@ final class Jsonmaker_Plugin {
 		}
 
 		return false;
+	}
+
+	private function maybe_ensure_about_links(array &$tree): void {
+		if (! $this->is_free_account()) {
+			return;
+		}
+
+		if (! isset($tree['children']) || ! is_array($tree['children'])) {
+			$tree['children'] = [];
+		}
+
+		$about_index = null;
+		$about_key = $this->normalize_title_key('about');
+
+		foreach ($tree['children'] as $index => $child) {
+			$child_slug = $child['slug'] ?? '';
+			$child_key = $this->normalize_title_key($child['title'] ?? '');
+
+			if ($child_slug === 'about' || ($child_key !== '' && $child_key === $about_key)) {
+				$about_index = $index;
+				break;
+			}
+		}
+
+		if ($about_index === null) {
+			$tree['children'][] = [
+				'title' => 'about',
+				'slug' => 'about',
+				'children' => [],
+			];
+			$about_index = count($tree['children']) - 1;
+		}
+
+		$tree['children'][$about_index]['title'] = 'about';
+		$tree['children'][$about_index]['slug'] = 'about';
+
+		unset($tree['children'][$about_index]['value'], $tree['children'][$about_index]['url']);
+
+		if (! isset($tree['children'][$about_index]['children']) || ! is_array($tree['children'][$about_index]['children'])) {
+			$tree['children'][$about_index]['children'] = [];
+		}
+
+		$about_children = &$tree['children'][$about_index]['children'];
+		$host_url = esc_url_raw('https://wordpress.org/plugins/fishdan-jsonmaker/');
+		$this->ensure_about_link_child(
+			$about_children,
+			'host-your-own-toolbar',
+			'Host Your Own Toolbar',
+			$host_url
+		);
+
+		$source_url = $this->get_toolbar_source_url_from_request();
+		if ($source_url !== '') {
+			$this->ensure_about_link_child(
+				$about_children,
+				'edit-your-toolbar-source',
+				'Edit your toolbar source',
+				$source_url
+			);
+		}
+	}
+
+	private function ensure_about_link_child(array &$children, string $slug, string $title, string $value): void {
+		$title_key = $this->normalize_title_key($title);
+		$clean_value = esc_url_raw($value);
+
+		if ($clean_value === '') {
+			return;
+		}
+
+		foreach ($children as &$child) {
+			$child_slug = $child['slug'] ?? '';
+			$child_key = $this->normalize_title_key($child['title'] ?? '');
+
+			if ($child_slug === $slug || ($child_key !== '' && $child_key === $title_key)) {
+				$child['title'] = $title;
+				$child['slug'] = $slug;
+				$child['value'] = $clean_value;
+				unset($child['url']);
+				$child['children'] = [];
+
+				return;
+			}
+		}
+
+		$children[] = [
+			'title' => $title,
+			'slug' => $slug,
+			'value' => $clean_value,
+			'children' => [],
+		];
+	}
+
+	private function is_free_account(): bool {
+		$fs = jm_fs();
+
+		if (! is_object($fs)) {
+			return true;
+		}
+
+		if (method_exists($fs, 'is_free_plan')) {
+			return (bool) $fs->is_free_plan();
+		}
+
+		return true;
 	}
 
 	private function update_node_title(array &$node, string $target_slug, string $new_title, string $new_slug): bool {
@@ -1702,8 +2002,13 @@ final class Jsonmaker_Plugin {
 			'.jsonmaker-node__value {font-family: var(--bs-font-monospace);}',
 			'.jsonmaker-node__title a {text-decoration: none;}',
 			'.jsonmaker-node__children {margin-top: 0.5rem;}',
+			'.jsonmaker-node__children[hidden] {display: none !important;}',
 			'.jsonmaker-tree .btn {min-width: 6.5rem;}',
 			'.jsonmaker-delete-form {display: inline-flex; margin: 0;}',
+			'.jsonmaker-node__actions {margin-left: auto;}',
+			'.jsonmaker-node-toggle {border: 1px solid var(--bs-border-color); background: var(--bs-light); color: inherit; width: 1.5rem; height: 1.5rem; border-radius: 999px; font-weight: 600; line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;}',
+			'.jsonmaker-node-toggle:focus {outline: 2px solid var(--bs-primary); outline-offset: 2px;}',
+			'.jsonmaker-node-toggle-placeholder {display: inline-block; width: 1.5rem;}',
 			'.jsonmaker-section {margin-bottom: 1rem;}',
 			'.jsonmaker-section__header {padding: 0;}',
 			'.jsonmaker-section__toggle {display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; padding: 0.75rem 1rem; font-size: 1rem; cursor: pointer; color: inherit;}',
@@ -1716,6 +2021,11 @@ final class Jsonmaker_Plugin {
 			'.jsonmaker-notice--error {background: #f8d7da; border-color: #f5c2c7; color: #842029;}',
 			'.jsonmaker-instructions ul {padding-left: 1rem;}',
 			'.jsonmaker-auth {max-width: 36rem;}',
+			'.jsonmaker-checkout-button {display: inline-flex; align-items: center; justify-content: center;}',
+			'.jsonmaker-checkout-embed iframe {border-radius: 0.75rem; background-color: #fff;}',
+			'.jsonmaker-checkout-embed__fallback {margin-top: 0.5rem; font-size: 0.85rem;}',
+			'.jsonmaker-checkout-panel {background: #fff;}',
+			'.jsonmaker-checkout-panel .jsonmaker-checkout-embed {margin-top: 1rem;}',
 		];
 		wp_add_inline_style('jsonmaker-inline', implode("\n", $style_lines));
 
@@ -1766,9 +2076,75 @@ final class Jsonmaker_Plugin {
 			"\t\t}",
 			"\t}",
 			"}",
+			"const jsonmakerNodeCookiePrefix = 'jsonmaker_node_';",
+			"function jsonmakerSetNodeState(slug, isOpen) {",
+			"\tif (!slug) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst maxAge = 60 * 60 * 24 * 365;",
+			"\tdocument.cookie = jsonmakerNodeCookiePrefix + slug + '=' + (isOpen ? 'open' : 'closed') + '; path=/; max-age=' + maxAge;",
+			"}",
+			"function jsonmakerGetNodeState(slug) {",
+			"\tif (!slug) {",
+			"\t\treturn null;",
+			"\t}",
+			"\tconst pattern = new RegExp('(?:^|; )' + jsonmakerNodeCookiePrefix + slug + '=([^;]*)');",
+			"\tconst match = document.cookie.match(pattern);",
+			"\treturn match ? match[1] : null;",
+			"}",
+			"function jsonmakerSetNodeDomState(node, isOpen) {",
+			"\tif (!node) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst children = node.querySelector('[data-jsonmaker-node-children]');",
+			"\tconst toggle = node.querySelector('[data-jsonmaker-node-toggle]');",
+			"\tif (!children || !toggle) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst openLabel = toggle.dataset.jsonmakerLabelOpen || '+';",
+			"\tconst closeLabel = toggle.dataset.jsonmakerLabelClose || '−';",
+			"\tif (isOpen) {",
+			"\t\tchildren.removeAttribute('hidden');",
+			"\t\ttoggle.textContent = closeLabel;",
+			"\t\ttoggle.dataset.jsonmakerNodeState = 'open';",
+			"\t\ttoggle.setAttribute('aria-expanded', 'true');",
+			"\t\tnode.classList.add('jsonmaker-node--open');",
+			"\t} else {",
+			"\t\tchildren.setAttribute('hidden', '');",
+			"\t\ttoggle.textContent = openLabel;",
+			"\t\ttoggle.dataset.jsonmakerNodeState = 'closed';",
+			"\t\ttoggle.setAttribute('aria-expanded', 'false');",
+			"\t\tnode.classList.remove('jsonmaker-node--open');",
+			"\t}",
+			"}",
+			"function jsonmakerApplyNodeState(node) {",
+			"\tconst slug = node.dataset.jsonmakerNode;",
+			"\tif (!slug) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst stored = jsonmakerGetNodeState(slug);",
+			"\tjsonmakerSetNodeDomState(node, stored === 'open');",
+			"}",
+			"function jsonmakerCloseSiblingForms(currentForm) {",
+			"\tif (!currentForm) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst node = currentForm.closest('[data-jsonmaker-node]');",
+			"\tif (!node) {",
+			"\t\treturn;",
+			"\t}",
+			"\tnode.querySelectorAll('.jsonmaker-add-form, .jsonmaker-edit-form').forEach(function (form) {",
+			"\t\tif (form !== currentForm) {",
+			"\t\t\tform.setAttribute('hidden', '');",
+			"\t\t}",
+			"\t});",
+			"}",
 			"document.addEventListener('DOMContentLoaded', function () {",
 			"\tdocument.querySelectorAll('[data-jsonmaker-section]').forEach(function (section) {",
 			"\t\tjsonmakerApplySectionState(section);",
+			"\t});",
+			"\tdocument.querySelectorAll('[data-jsonmaker-node]').forEach(function (node) {",
+			"\t\tjsonmakerApplyNodeState(node);",
 			"\t});",
 			"});",
 			"document.addEventListener('click', function (event) {",
@@ -1831,6 +2207,7 @@ final class Jsonmaker_Plugin {
 			"\t\t}",
 			"\t\tconst isHidden = form.hasAttribute('hidden');",
 			"\t\tif (isHidden) {",
+			"\t\t\tjsonmakerCloseSiblingForms(form);",
 			"\t\t\tform.removeAttribute('hidden');",
 			"\t\t\tconst focusable = form.querySelector('input[name=\"jsonmaker_title\"]');",
 			"\t\t\tif (focusable) {",
@@ -1854,6 +2231,7 @@ final class Jsonmaker_Plugin {
 			"\t\t}",
 			"\t\tconst isHidden = form.hasAttribute('hidden');",
 			"\t\tif (isHidden) {",
+			"\t\t\tjsonmakerCloseSiblingForms(form);",
 			"\t\t\tform.removeAttribute('hidden');",
 			"\t\t\tconst focusable = form.querySelector('input[name=\"jsonmaker_title\"]');",
 			"\t\t\tif (focusable) {",
@@ -1861,6 +2239,21 @@ final class Jsonmaker_Plugin {
 			"\t\t\t}",
 			"\t\t} else {",
 			"\t\t\tform.setAttribute('hidden', '');",
+			"\t\t}",
+			"\t\treturn;",
+			"\t}",
+			"\tconst nodeToggle = event.target.closest('[data-jsonmaker-node-toggle]');",
+			"\tif (nodeToggle) {",
+			"\t\tevent.preventDefault();",
+			"\t\tconst node = nodeToggle.closest('[data-jsonmaker-node]');",
+			"\t\tif (!node) {",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tconst slug = node.dataset.jsonmakerNode || '';",
+			"\t\tconst isOpen = nodeToggle.dataset.jsonmakerNodeState === 'open';",
+			"\t\tjsonmakerSetNodeDomState(node, !isOpen);",
+			"\t\tif (slug) {",
+			"\t\t\tjsonmakerSetNodeState(slug, !isOpen);",
 			"\t\t}",
 			"\t\treturn;",
 			"\t}",
@@ -1913,6 +2306,152 @@ final class Jsonmaker_Plugin {
 		$request_uri = esc_url_raw($request_uri);
 
 		return home_url($request_uri);
+	}
+
+	private function get_toolbar_source_url_from_request(): string {
+		$redirect_raw = $this->get_post_string('jsonmaker_redirect');
+
+		if ($redirect_raw !== null) {
+			$redirect = remove_query_arg(['jsonmaker_msg', 'jsonmaker_status'], $redirect_raw);
+			$redirect = esc_url_raw($redirect);
+
+			if ($redirect !== '') {
+				return $redirect;
+			}
+		}
+
+		$current_url = $this->get_current_url();
+
+		if ($current_url === '') {
+			return '';
+		}
+
+		$current_url = remove_query_arg(['jsonmaker_msg', 'jsonmaker_status'], $current_url);
+
+		return esc_url_raw($current_url);
+	}
+
+	private function build_freemius_checkout_url(int $plan_id, int $licenses): string {
+		$fs = jm_fs();
+
+		if (! is_object($fs)) {
+			return '';
+		}
+
+		if (! class_exists('FS_Checkout_Manager') && file_exists(__DIR__ . '/vendor/freemius/includes/managers/class-fs-checkout-manager.php')) {
+			require_once __DIR__ . '/vendor/freemius/includes/managers/class-fs-checkout-manager.php';
+		}
+
+		if (! class_exists('FS_Checkout_Manager')) {
+			return '';
+		}
+
+		$resolved_plan_id = $this->resolve_checkout_plan_id($plan_id, $fs);
+
+		if ($resolved_plan_id <= 0) {
+			return '';
+		}
+
+		$checkout_manager = FS_Checkout_Manager::instance();
+		$plugin_id = $fs->get_id();
+		$query_params = $checkout_manager->get_query_params($fs, $plugin_id, $resolved_plan_id, (string) $licenses);
+		$query_params['return_url'] = $fs->_get_sync_license_url($plugin_id);
+		$base_url = defined('FS_CHECKOUT__ADDRESS') ? FS_CHECKOUT__ADDRESS : 'https://checkout.freemius.com';
+
+		return $checkout_manager->get_full_checkout_url($query_params, $base_url);
+	}
+
+	private function resolve_checkout_plan_id(int $requested_plan_id, $fs): int {
+		if ($requested_plan_id > 0) {
+			return $requested_plan_id;
+		}
+
+		if (! is_object($fs)) {
+			return 0;
+		}
+
+		if (! method_exists($fs, 'is_registered') || ! $fs->is_registered()) {
+			return 0;
+		}
+
+		$plan_class = __DIR__ . '/vendor/freemius/includes/entities/class-fs-plugin-plan.php';
+		if (! class_exists('FS_Plugin_Plan') && file_exists($plan_class)) {
+			require_once $plan_class;
+		}
+
+		if (! method_exists($fs, '_sync_plans')) {
+			return 0;
+		}
+
+		$plans = $fs->_sync_plans();
+
+		if (! is_array($plans) || empty($plans)) {
+			return 0;
+		}
+
+		$fallback_id = 0;
+
+		foreach ($plans as $plan) {
+			if (! is_object($plan) || ! isset($plan->id)) {
+				continue;
+			}
+
+			if ($fallback_id === 0) {
+				$fallback_id = (int) $plan->id;
+			}
+
+			$is_free = false;
+			if ($plan instanceof FS_Plugin_Plan && method_exists($plan, 'is_free')) {
+				$is_free = $plan->is_free();
+			} elseif (property_exists($plan, 'name')) {
+				$is_free = strtolower((string) $plan->name) === 'free';
+			}
+
+			if (! $is_free) {
+				return (int) $plan->id;
+			}
+		}
+
+		return $fallback_id;
+	}
+
+	private function get_configured_plan_id(): int {
+		$plan_id = 0;
+
+		if (defined('JSONMAKER_CHECKOUT_PLAN_ID')) {
+			$plan_id = (int) constant('JSONMAKER_CHECKOUT_PLAN_ID');
+		} else {
+			$stored = get_option('jsonmaker_checkout_plan_id');
+			if (is_numeric($stored)) {
+				$plan_id = (int) $stored;
+			}
+		}
+
+		$plan_id = (int) apply_filters('jsonmaker_checkout_plan_id', $plan_id);
+
+		if ($plan_id > 0) {
+			return $plan_id;
+		}
+
+		return self::PAID_PLAN_ID;
+	}
+
+	private function sanitize_css_dimension($value, string $fallback): string {
+		$value = is_string($value) ? trim($value) : '';
+
+		if ($value === '') {
+			return $fallback;
+		}
+
+		if (preg_match('/^\d+(\.\d+)?(px|rem|em|vh|vw|%)?$/', $value)) {
+			if (preg_match('/(px|rem|em|vh|vw|%)$/', $value)) {
+				return $value;
+			}
+
+			return $value . 'px';
+		}
+
+		return $fallback;
 	}
 
 	public function maybe_add_cors_headers(): void {
