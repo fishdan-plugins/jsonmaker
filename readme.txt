@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.6
+Stable tag: 0.2.7
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,11 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.7 =
+* Added “Import current toolbar” button that can pull JSON directly from the Subscribed Toolbar extension.
+* Optional extension ID field plus visible error feedback when the extension isn’t reachable.
+* Successful extension imports now auto-select “Replace entire tree” to overwrite the current tree.
 
 = 0.2.6 =
 * Adjusted Freemius configuration to use the wp.org-compliant free SDK settings and bumped the plugin version for release.

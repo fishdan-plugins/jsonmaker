@@ -3,7 +3,7 @@
  * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.2.6
+ * Version: 0.2.7
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.2.6');
+	define('JSONMAKER_VERSION', '0.2.7');
 }
 
 if (! function_exists('jm_fs')) {
@@ -1132,9 +1132,17 @@ final class Jsonmaker_Plugin {
 			echo '<div class="jsonmaker-import__hint form-text">' . esc_html__('Used when Mode is set to Append.', 'fishdan-jsonmaker') . '</div>';
 			echo '</div>';
 		}
+		$toolbar_button_id = 'jsonmaker-import-toolbar';
+		$default_extension_id = 'hdailbkmbdcililnbemepacdkfdkbhco';
 		echo '<div class="col-12">';
-		echo '<label for="' . esc_attr($textarea_id) . '" class="form-label">' . esc_html__('JSON payload', 'fishdan-jsonmaker') . '</label>';
+		echo '<div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">';
+		echo '<label for="' . esc_attr($textarea_id) . '" class="form-label mb-0">' . esc_html__('JSON payload', 'fishdan-jsonmaker') . '</label>';
+		echo '<button type="button" class="btn btn-outline-secondary btn-sm" id="' . esc_attr($toolbar_button_id) . '">' . esc_html__('Import current toolbar', 'fishdan-jsonmaker') . '</button>';
+		echo '</div>';
 		echo '<textarea id="' . esc_attr($textarea_id) . '" class="form-control" name="jsonmaker_payload" rows="10" required></textarea>';
+		echo '<div class="form-text mt-2">' . esc_html__('Optional: set your Chrome extension ID if the import button fails. Leave blank to use the Chrome Web Store ID.', 'fishdan-jsonmaker') . '</div>';
+		echo '<input type="text" class="form-control mt-2" id="jsonmaker-import-extension-id" placeholder="' . esc_attr($default_extension_id) . '" />';
+		echo '<div class="form-text text-danger mt-1 d-none" id="jsonmaker-import-extension-status"></div>';
 		echo '</div>';
 		echo '<div class="col-12 d-flex gap-2">';
 		echo '<button type="submit" class="btn btn-primary">' . esc_html__('Import JSON', 'fishdan-jsonmaker') . '</button>';
@@ -2384,6 +2392,70 @@ final class Jsonmaker_Plugin {
 			"\t\t\t}",
 			"\t\t}",
 			"\t}",
+			"});",
+			"document.addEventListener('click', function (event) {",
+			"\tconst importButton = event.target.closest('#jsonmaker-import-toolbar');",
+			"\tif (!importButton) {",
+			"\t\treturn;",
+			"\t}",
+			"\tevent.preventDefault();",
+			"\tconst textarea = document.getElementById('jsonmaker-import-payload');",
+			"\tif (!textarea) {",
+			"\t\treturn;",
+			"\t}",
+			"\tconst extensionInput = document.getElementById('jsonmaker-import-extension-id');",
+			"\tconst statusEl = document.getElementById('jsonmaker-import-extension-status');",
+			"\tconst defaultExtensionId = 'hdailbkmbdcililnbemepacdkfdkbhco';",
+			"\tconst extensionId = extensionInput && extensionInput.value ? extensionInput.value.trim() : defaultExtensionId;",
+			"\tif (statusEl) {",
+			"\t\tstatusEl.classList.add('d-none');",
+			"\t\tstatusEl.textContent = '';",
+			"\t}",
+			"\tif (!extensionId) {",
+			"\t\tconsole.error('export failed: missing extension id');",
+			"\t\tif (statusEl) {",
+			"\t\t\tstatusEl.textContent = 'Export failed: missing extension ID';",
+			"\t\t\tstatusEl.classList.remove('d-none');",
+			"\t\t}",
+			"\t\treturn;",
+			"\t}",
+			"\tif (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {",
+			"\t\tconsole.error('export failed');",
+			"\t\tif (statusEl) {",
+			"\t\t\tstatusEl.textContent = 'Export failed: Chrome runtime not available in this context. Make sure the extension can run on this page.';",
+			"\t\t\tstatusEl.classList.remove('d-none');",
+			"\t\t}",
+			"\t\treturn;",
+			"\t}",
+			"\tchrome.runtime.sendMessage(extensionId, { type: 'EXPORT_SUBSCRIBED_FOLDER' }, {}, function (res) {",
+			"\t\tif (chrome.runtime && chrome.runtime.lastError) {",
+			"\t\t\tconsole.error(chrome.runtime.lastError.message || 'export failed');",
+			"\t\t\tif (statusEl) {",
+			"\t\t\t\tstatusEl.textContent = 'Export failed: ' + (chrome.runtime.lastError.message || 'extension not reachable. Check host permissions and ID.');",
+			"\t\t\t\tstatusEl.classList.remove('d-none');",
+			"\t\t\t}",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\tif (!res || res.ok !== true) {",
+			"\t\t\tconsole.error((res && res.error) ? res.error : 'export failed');",
+			"\t\t\tif (statusEl) {",
+			"\t\t\t\tstatusEl.textContent = 'Export failed: ' + ((res && res.error) ? res.error : 'extension did not return data.');",
+			"\t\t\t\tstatusEl.classList.remove('d-none');",
+			"\t\t\t}",
+			"\t\t\treturn;",
+			"\t\t}",
+			"\t\ttextarea.value = res.json || '';",
+			"\t\ttextarea.dispatchEvent(new Event('input', { bubbles: true }));",
+			"\t\tconst replaceRadio = document.getElementById('jsonmaker-import-mode-replace');",
+			"\t\tif (replaceRadio) {",
+			"\t\t\treplaceRadio.checked = true;",
+			"\t\t\treplaceRadio.dispatchEvent(new Event('change', { bubbles: true }));",
+			"\t\t}",
+			"\t\tif (statusEl) {",
+			"\t\t\tstatusEl.classList.add('d-none');",
+			"\t\t\tstatusEl.textContent = '';",
+			"\t\t}",
+			"\t});",
 			"});"
 		];
 		wp_add_inline_script('jsonmaker-inline', implode("\n", $script_lines));
