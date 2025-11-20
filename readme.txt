@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.7
+Stable tag: 0.2.8
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,10 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.8 =
+* Removed the optional extension ID text field from the toolbar import UX now that the browser postMessage flow handles extension discovery automatically.
+* Relaxed import validation to allow repeating node titles (unique slugs are still generated) so toolbar exports with duplicate titles no longer fail.
 
 = 0.2.7 =
 * Added “Import current toolbar” button that can pull JSON directly from the Subscribed Toolbar extension.
