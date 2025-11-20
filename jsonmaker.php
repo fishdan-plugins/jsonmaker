@@ -938,19 +938,6 @@ final class Jsonmaker_Plugin {
 			}
 		}
 
-		$checkout_panel = $this->render_checkout_panel();
-		if ($checkout_panel !== '') {
-			$checkout_section = $this->render_collapsible_section(
-				'checkout',
-				__('Upgrade with Freemius Checkout', 'fishdan-jsonmaker'),
-				$checkout_panel,
-				true
-			);
-			if ($checkout_section !== '') {
-				$sections[] = $checkout_section;
-			}
-		}
-
 		if ($can_manage) {
 			ob_start();
 			$this->render_import_form($current_url, $tree);
@@ -1076,12 +1063,15 @@ final class Jsonmaker_Plugin {
 		}
 
 		global $title;
-		$title = __('fishdan Jsonmaker', 'fishdan-jsonmaker');
+		$title = __('Jsonmaker Dashboard', 'fishdan-jsonmaker');
 
 		echo '<div class="wrap jsonmaker-admin">';
 		echo '<h1>' . esc_html__('fishdan Jsonmaker', 'fishdan-jsonmaker') . '</h1>';
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_shortcode() escapes its markup.
-		echo $this->render_shortcode();
+		echo '<div class="card border-0 shadow-sm mb-4"><div class="card-body">';
+		echo '<p class="mb-2">' . esc_html__('The Jsonmaker editor now lives on pages or posts where you place the [jsonmaker] shortcode. This admin view will soon power new checkout and account features.', 'fishdan-jsonmaker') . '</p>';
+		echo '<p class="mb-0">' . esc_html__('Visit your published page to manage the tree. Use the form below to enter a license key emailed after purchase.', 'fishdan-jsonmaker') . '</p>';
+		echo '</div></div>';
+		$this->render_license_entry_panel();
 		echo '</div>';
 	}
 
@@ -1263,34 +1253,131 @@ final class Jsonmaker_Plugin {
 			return (string) ob_get_clean();
 		}
 
-	private function render_checkout_panel(): string {
-		$plan_id = $this->get_configured_plan_id();
-		$shortcode_html = $this->render_checkout_shortcode([
-			'plan_id' => $plan_id > 0 ? (string) $plan_id : '',
-			'mode' => 'iframe',
-			'height' => '860px',
-			'label' => __('Secure Checkout', 'fishdan-jsonmaker'),
-		]);
+	private function render_license_entry_panel(): void {
+		$nonce = wp_create_nonce('jsonmaker_activate_license');
+		$current_url = $this->get_current_url();
 
-		if ($shortcode_html === '') {
-			return '<div class="jsonmaker-checkout-panel card border-0 shadow-sm"><div class="card-body"><p class="text-muted mb-0">' .
-				esc_html__('Set a Freemius plan ID via the jsonmaker_checkout shortcode, the JSONMAKER_CHECKOUT_PLAN_ID constant, or the jsonmaker_checkout_plan_id option to enable checkout.', 'fishdan-jsonmaker') .
-				'</p></div></div>';
+		$license_details = $this->get_license_status_details();
+		$buy_url = $this->build_freemius_checkout_url(self::PAID_PLAN_ID, 1);
+
+		echo '<div class="card border-0 shadow-sm jsonmaker-license-card">';
+		echo '<div class="card-body">';
+		echo '<div class="jsonmaker-license-card__header d-flex flex-wrap align-items-center justify-content-between mb-3">';
+		echo '<div>';
+		if ($license_details['has_license']) {
+			echo '<div class="text-success fw-semibold">' . esc_html($license_details['summary']) . '</div>';
+			if ($license_details['expires_text'] !== '') {
+				echo '<div class="text-muted small">' . esc_html($license_details['expires_text']) . '</div>';
+			}
+		} else {
+			echo '<div class="text-muted">' . esc_html($license_details['summary']) . '</div>';
+		}
+		echo '</div>';
+		if ($buy_url !== '') {
+			echo '<a class="button button-secondary jsonmaker-buy-button" href="' . esc_url($buy_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Buy Jsonmaker Basic', 'fishdan-jsonmaker') . '</a>';
+		}
+		echo '</div>';
+		echo '<h2 class="h5 mb-3">' . esc_html__('Enter License Key', 'fishdan-jsonmaker') . '</h2>';
+		echo '<p class="text-muted">' . esc_html__('Paste the license code emailed to you after purchase to enable premium features.', 'fishdan-jsonmaker') . '</p>';
+		echo '<form id="jsonmaker-license-form">';
+		echo '<div class="mb-3">';
+		echo '<label class="form-label" for="jsonmaker-license-key">' . esc_html__('License Key', 'fishdan-jsonmaker') . '</label>';
+		echo '<input type="text" id="jsonmaker-license-key" class="regular-text" name="license_key" required />';
+		echo '</div>';
+		echo '<input type="hidden" name="action" value="jsonmaker_activate_license" />';
+		echo '<input type="hidden" name="jsonmaker_license_nonce" value="' . esc_attr($nonce) . '" />';
+		echo '<button type="submit" class="button button-primary">' . esc_html__('Activate License', 'fishdan-jsonmaker') . '</button>';
+		echo '<span id="jsonmaker-license-status" class="ms-2"></span>';
+		echo '</form>';
+		echo '</div>';
+		echo '</div>';
+		echo '<script type="text/javascript">';
+		echo 'document.addEventListener("DOMContentLoaded",function(){';
+		echo 'const form=document.getElementById("jsonmaker-license-form");';
+		echo 'if(!form){return;}';
+		echo 'const status=document.getElementById("jsonmaker-license-status");';
+		echo 'form.addEventListener("submit",function(e){e.preventDefault();if(status){status.textContent="' . esc_js(__('Activating…', 'fishdan-jsonmaker')) . '";status.className="text-muted";}const data=new FormData(form);fetch(ajaxurl,{method:"POST",credentials:"same-origin",body:data}).then(res=>res.json()).then(resp=>{if(!status){return;}if(resp.success){status.textContent="' . esc_js(__('License activated!', 'fishdan-jsonmaker')) . '";status.className="text-success";form.reset();}else{status.textContent=(resp.data&&resp.data.message)?resp.data.message:"' . esc_js(__('Unable to activate license.', 'fishdan-jsonmaker')) . '";status.className="text-error";}}).catch(()=>{if(status){status.textContent="' . esc_js(__('Request failed. Please try again.', 'fishdan-jsonmaker')) . '";status.className="text-error";}});});';
+		echo '});';
+		echo '</script>';
+	}
+
+	/**
+	 * @return array{has_license: bool, summary: string, expires_text: string}
+	 */
+	private function get_license_status_details(): array {
+		$details = [
+			'has_license' => false,
+			'summary' => __('No active license detected. Enter your key below to unlock premium features.', 'fishdan-jsonmaker'),
+			'expires_text' => '',
+		];
+
+		$fs = jm_fs();
+
+		if (! is_object($fs) || ! method_exists($fs, '_get_license')) {
+			return $details;
 		}
 
-		ob_start();
-		echo '<div class="jsonmaker-checkout-panel card border-0 shadow-sm">';
-		echo '<div class="card-body">';
-		echo '<p class="text-muted">' . esc_html__(
-			'Purchase Jsonmaker Basic through the Freemius checkout to unlock premium features instantly.',
-			'fishdan-jsonmaker'
-		) . '</p>';
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_checkout_shortcode() returns escaped markup.
-		echo $shortcode_html;
-		echo '</div>';
-		echo '</div>';
+		$license = $fs->_get_license();
 
-		return (string) ob_get_clean();
+		if (! $license instanceof FS_Plugin_License) {
+			return $details;
+		}
+
+		$plan_label = $this->describe_plan_name((int) ($license->plan_id ?? 0));
+		$details['has_license'] = true;
+		$details['summary'] = sprintf(
+			/* translators: %s is the active plan label. */
+			__('Active license: %s', 'fishdan-jsonmaker'),
+			$plan_label
+		);
+
+		if (method_exists($license, 'is_lifetime') && $license->is_lifetime()) {
+			$details['expires_text'] = __('Lifetime license', 'fishdan-jsonmaker');
+		} else {
+			$details['expires_text'] = $this->format_license_expiration($license->expiration ?? '');
+		}
+
+		return $details;
+	}
+
+	private function describe_plan_name(int $plan_id): string {
+		if ($plan_id === self::PAID_PLAN_ID) {
+			return __('Jsonmaker Basic', 'fishdan-jsonmaker');
+		}
+
+		if ($plan_id === self::FREE_PLAN_ID) {
+			return __('Free Plan', 'fishdan-jsonmaker');
+		}
+
+		if ($plan_id > 0) {
+			return sprintf(
+				/* translators: %d is the plan ID. */
+				__('Plan #%d', 'fishdan-jsonmaker'),
+				$plan_id
+			);
+		}
+
+		return __('Unknown Plan', 'fishdan-jsonmaker');
+	}
+
+	private function format_license_expiration(?string $expiration): string {
+		if ($expiration === null || $expiration === '') {
+			return '';
+		}
+
+		$timestamp = strtotime($expiration);
+
+		if ($timestamp === false) {
+			return $expiration;
+		}
+
+		$date = date_i18n(get_option('date_format'), $timestamp);
+
+		return sprintf(
+			/* translators: %s is a formatted date. */
+			__('Renews on %s', 'fishdan-jsonmaker'),
+			$date
+		);
 	}
 
 	private function render_collapsible_section(string $id, string $title, string $content, bool $default_open = true): string {
@@ -2026,6 +2113,9 @@ final class Jsonmaker_Plugin {
 			'.jsonmaker-checkout-embed__fallback {margin-top: 0.5rem; font-size: 0.85rem;}',
 			'.jsonmaker-checkout-panel {background: #fff;}',
 			'.jsonmaker-checkout-panel .jsonmaker-checkout-embed {margin-top: 1rem;}',
+			'.jsonmaker-license-card {background: #fff;}',
+			'.jsonmaker-license-card__header {gap: 1rem;}',
+			'.jsonmaker-buy-button {margin-left: auto;}',
 		];
 		wp_add_inline_style('jsonmaker-inline', implode("\n", $style_lines));
 
