@@ -3,7 +3,7 @@ Contributors: fishdan
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.5
+Stable tag: 0.2.6
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 Tags: links, navigation, json, shortcode
@@ -43,6 +43,9 @@ Hit `/json/<node-slug>.json`. The slug appears in the add/edit form IDs (e.g., `
 Each node’s slug is derived from its title. Enforcing unique titles guarantees stable JSON endpoints.
 
 == Changelog ==
+
+= 0.2.6 =
+* Adjusted Freemius configuration to use the wp.org-compliant free SDK settings and bumped the plugin version for release.
 
 = 0.2.5 =
 * Reworked the admin screen with a dedicated license card that shows active plan details, remaining term, and a “Buy Jsonmaker Basic” button, plus an AJAX license-entry form.

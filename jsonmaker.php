@@ -3,7 +3,7 @@
  * Plugin Name: fishdan Jsonmaker
  * Plugin URI: https://www.fishdan.com/jsonmaker
  * Description: Manage a hierarchical collection of titled links that can be edited from a shortcode and fetched as JSON.
- * Version: 0.2.5
+ * Version: 0.2.6
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * License: MIT
@@ -19,7 +19,7 @@ if (! defined('ABSPATH')) {
 }
 
 if (! defined('JSONMAKER_VERSION')) {
-	define('JSONMAKER_VERSION', '0.2.5');
+	define('JSONMAKER_VERSION', '0.2.6');
 }
 
 if (! function_exists('jm_fs')) {
@@ -33,21 +33,20 @@ if (! function_exists('jm_fs')) {
 			require_once dirname(__FILE__) . '/vendor/freemius/start.php';
 
 			$jm_fs = fs_dynamic_init([
-				'id' => '21365',
-				'slug' => 'json-maker',
-				'type' => 'plugin',
-				'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
-				'is_premium' => true,
-				'premium_suffix' => 'Basic',
-				'has_premium_version' => true,
-				'has_addons' => false,
-				'has_paid_plans' => true,
-				'wp_org_gatekeeper' => 'OA7#BoRiBNqdf52FvzEf!!074aRLPs8fspif$7K1#4u4Csys1fQlCecVcUTOs2mcpeVHi#C2j9d09fOTvbC0HloPT7fFee5WdS3G',
-				'menu' => [
-					'first-path' => 'plugins.php',
-					'support' => false,
-				],
-			]);
+			'id' => '21365',
+			'slug' => 'json-maker',
+			'type' => 'plugin',
+			'public_key' => 'pk_404c69d00480e719a56ebde3bbe2f',
+			'is_premium' => false,
+			'premium_suffix' => '',
+			'has_premium_version' => false,
+			'has_addons' => false,
+			'has_paid_plans' => false,
+			'menu' => [
+				'first-path' => 'plugins.php',
+				'support' => false,
+			],
+		]);
 		}
 
 		return $jm_fs;
